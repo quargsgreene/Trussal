@@ -5,6 +5,7 @@ import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { build as esbuildBuild } from 'esbuild';
 import { buildPages } from './build-pages.mjs';
 import { trussalHmr } from './vite-plugin-trussal-hmr.js';
+import { writeIpaSounds } from './scripts/ipa-synth.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const STRUDEL_FORK_WEB = resolve(__dirname, 'strudel-fork/packages/web');
@@ -65,11 +66,15 @@ export default defineConfig(({ mode, command }) => {
                 // hazard as above).
                 url.startsWith('/components/') ||
                 url.startsWith('/latency-instrument/') ||
+                url.startsWith('/examples/') ||
                 url.startsWith('/public/') ||
                 url.startsWith('/__docs-version') ||
                 url.startsWith('/documentation') ||
                 url.startsWith('/about') ||
-                url.startsWith('/css/src/docs-images/')) {
+                url.startsWith('/css/src/docs-images/') ||
+                // Synthesized IPA sounds (scripts/ipa-synth.mjs), rendered
+                // and served by the trussal-custom-config plugin below.
+                url.startsWith('/assets/ipa/')) {
               return url;
             }
           },
@@ -231,6 +236,20 @@ export default defineConfig(({ mode, command }) => {
             'import("/src/entry-hmr.js");',
             '',
           ].join('\n');
+          // The IPA sounds `.speak()` plays. Production ships them in
+          // dist/assets/ipa next to Strudel's assets; in dev /assets is the
+          // container's, so render the same folder here and answer for it.
+          const ipaDir = resolve(__dirname, 'dist/assets/ipa');
+          try { writeIpaSounds(ipaDir); } catch (e) { console.warn('[vite] IPA sound synthesis failed', e); }
+          server.middlewares.use('/assets/ipa/', (req, res, next) => {
+            const name = (req.url || '').split('?')[0].replace(/^\/+/, '');
+            if (!/^ipa-[0-9a-f]{4}(-[0-9a-f]{4})*(-[a-z]+)?\.wav$/.test(name)) return next();
+            const file = resolve(ipaDir, name);
+            if (!existsSync(file)) { res.statusCode = 404; return res.end(); }
+            res.setHeader('Content-Type', 'audio/wav');
+            res.setHeader('Cache-Control', 'max-age=3600');
+            res.end(readFileSync(file));
+          });
           server.middlewares.use((req, res, next) => {
             // Production's body.html links the bundled stylesheet. In dev the
             // CSS comes from Vite's module graph (src/styles.css is imported by
@@ -300,6 +319,9 @@ export default defineConfig(({ mode, command }) => {
                   path.join(DEPLOY_DIR, file)
                 );
               }
+              // emptyOutDir wiped the synthesized IPA sounds; render them
+              // back before the assets are copied.
+              writeIpaSounds(resolve(__dirname, 'dist/assets/ipa'));
               // Copy assets
               if (fs.existsSync(resolve(__dirname, 'dist/assets'))) {
                 fs.cpSync(resolve(__dirname, 'dist/assets'), path.join(DEPLOY_DIR, 'assets'), { recursive: true });

@@ -9,6 +9,7 @@ import {
   outputStateFor, outputStageActive, outputStageLibraries, neutralOutputState,
   PARTICLE2_DEFAULTS, PARTICLE3_DEFAULTS, TESSELLATION_DEFAULTS, TILING_DEFAULT_COUNT,
   MAX_PARTICLES, MAX_TILING_COUNT, MAX_TESSELLATION_COLS, MAX_TESSELLATION_ROWS,
+  CAMERA3D_DEFAULTS, CONTROLS3D_DEFAULTS, LIGHTING3D_DEFAULTS,
 } from '../src/audio-net/av-effects/OutputState.js';
 import { chainHasValuePattern } from '../src/audio-net/ValuePattern.js';
 import { parseMetaprogram } from './helpers/metaprogram.js';
@@ -169,6 +170,53 @@ test('outputStageLibraries names the family each layer needs', () => {
     { three: false, p5: true });
 });
 
+test('tessellation follows the shape: a 3D honeycomb is three.js, a 2D tiling or the quilt p5', () => {
+  assert.deepEqual(outputStageLibraries(stateOf('# sphere\n# tessellation [6 4]\n')),
+    { three: true, p5: false }, 'the honeycomb never loads p5');
+  assert.deepEqual(outputStageLibraries(stateOf('# star\n# tessellation [6 4]\n')),
+    { three: false, p5: true });
+  assert.deepEqual(outputStageLibraries(stateOf('# tessellation\n')),
+    { three: false, p5: true }, 'the shapeless quilt');
+});
+
+// --- camera3d / controls3d / lighting3d ---------------------------------------
+
+test('# camera3d: rested slots take the defaults, written ones wrap or clamp', () => {
+  assert.deepEqual(stateOf('# camera3d\n').camera3d, CAMERA3D_DEFAULTS);
+  assert.deepEqual(stateOf('# camera3d [30 ~ 2]\n').camera3d,
+    { ...CAMERA3D_DEFAULTS, azimuth: 30, zoom: 2 });
+  // Groups take positive reals only — a rest is how a slot says "default".
+  assert.deepEqual(stateOf('# camera3d [400 0.5 0.01 500 725]\n').camera3d,
+    { azimuth: 40, polar: 1, zoom: 0.05, fov: 120, roll: 5 },
+    'angles wrap, the polar angle stays off the poles, zoom and fov clamp');
+});
+
+test('# controls3d: per-mode defaults, none clears, last wins', () => {
+  assert.deepEqual(stateOf('# controls3d orbit\n').controls3d,
+    { mode: 'orbit', ...CONTROLS3D_DEFAULTS.orbit });
+  assert.deepEqual(stateOf('# controls3d fly [0.5 3]\n').controls3d,
+    { mode: 'fly', speed: 0.5, amount: 0.95 }, 'fly cannot close the whole gap');
+  assert.equal(stateOf('# controls3d orbit\n# controls3d none\n').controls3d, null);
+  assert.equal(stateOf('# controls3d orbit\n# controls3d map\n').controls3d.mode, 'map');
+});
+
+test('# lighting3d: defaults, color, and a color pattern sampled per cycle', () => {
+  assert.deepEqual(stateOf('# lighting3d directional\n').lighting3d,
+    { mode: 'directional', ...LIGHTING3D_DEFAULTS });
+  const warm = stateOf('# lighting3d point [2 300 60 0.5] "#ffd0a0"\n').lighting3d;
+  assert.deepEqual(warm, { mode: 'point', intensity: 2, azimuth: 300, polar: 60, spin: 0.5, color: '#ffd0a0' });
+  const text = '# lighting3d studio <"#ff0000" "#0000ff">\n';
+  assert.equal(stateOf(text, { cyclePos: 0.5 }).lighting3d.color, '#ff0000');
+  assert.equal(stateOf(text, { cyclePos: 1.5 }).lighting3d.color, '#0000ff');
+  assert.equal(stateOf('# lighting3d ambient\n# lighting3d none\n').lighting3d, null);
+});
+
+test('camera, controls and lighting alone never arm the stage', () => {
+  const state = stateOf('# camera3d [30]\n# controls3d orbit\n# lighting3d studio\n');
+  assert.equal(outputStageActive(state), false, 'they shape a scene; they are not one');
+  assert.deepEqual(outputStageLibraries(state), { three: false, p5: false });
+});
+
 // --- pattern-tick arming -----------------------------------------------------
 
 test('patterned stage arguments arm the pattern tick; plain ones do not', () => {
@@ -179,4 +227,8 @@ test('patterned stage arguments arm the pattern tick; plain ones do not', () => 
   assert.equal(chainHasValuePattern(chainOf('# background "#123456"\n')), false);
   assert.equal(chainHasValuePattern(chainOf('# tiling grid [<3 5>]\n')), true);
   assert.equal(chainHasValuePattern(chainOf('# particle2 [400 4 2]\n')), false);
+  assert.equal(chainHasValuePattern(chainOf('# lighting3d point <"#f00" "#00f">\n')), true,
+    'a patterned light color re-derives on the tick too');
+  assert.equal(chainHasValuePattern(chainOf('# camera3d [<10 90>]\n')), true);
+  assert.equal(chainHasValuePattern(chainOf('# controls3d orbit [0.25]\n')), false);
 });

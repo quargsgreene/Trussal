@@ -89,12 +89,18 @@ export function hasBotConfig(code) {
   return findBotConfigCall(code) != null;
 }
 
-// Locate the call and its argument text by balancing parentheses from the
-// opening one. String literals are skipped so a `)` inside a quoted value does
-// not end the argument early.
 export function findBotConfigCall(code) {
+  return findDeclarationCall(code, CALL_RE);
+}
+
+// Locate a declaration call (botConfig, permissions-config.js's
+// permissionsConfig) and its argument text by balancing parentheses from the
+// opening one. `callRe` matches the call's name with one leading context
+// character in group 1, the way CALL_RE does. String literals are skipped so
+// a `)` inside a quoted value does not end the argument early.
+export function findDeclarationCall(code, callRe) {
   const src = String(code ?? '');
-  const match = CALL_RE.exec(src);
+  const match = callRe.exec(src);
   if (!match) return null;
 
   const start = match.index + match[1].length;
@@ -132,7 +138,11 @@ export function findBotConfigCall(code) {
 // blank-line structure Hydra's preamble split depends on — is preserved, so
 // this is safe to run before splitHydraCode.
 export function stripBotConfig(code) {
-  const found = findBotConfigCall(code);
+  return stripDeclarationCall(code, CALL_RE);
+}
+
+export function stripDeclarationCall(code, callRe) {
+  const found = findDeclarationCall(code, callRe);
   if (!found) return String(code ?? '');
   const src = String(code ?? '');
   const before = src.slice(0, found.start);

@@ -29,6 +29,13 @@
 //     (media excepted), on top of whatever the anchors resolve to.
 //   * Disable CSS changes — routed to css-cycles-suppress.js: peer CSS Cycles
 //     sheets stop restyling this view, so the personal theme is not overridden.
+//   * Disable MediaPipe — read by facial-gesture.js: while checked, no camera is
+//     opened and no MediaPipe model is loaded or run in this browser.
+//   * Walkie Talkie Mode — read by walkie-talkie.js: while checked, this viewer
+//     talks only with the other Walkie Talkie Mode participants over bare
+//     camera + mic in a small corner screen, and the rest of the meeting (the
+//     aggregator included) treats them as having left. The one setting here
+//     whose effect reaches other browsers — through the sidecar, not CSS.
 
 import { setCssCyclesSuppressed } from './css-cycles-suppress.js';
 
@@ -68,6 +75,8 @@ const DEFAULT_THEME = {
   darkMode: false,
   disableCss: false,
   invert: false,
+  disableMediaPipe: false,
+  walkieTalkie: false,
   primary: '',     // '' → use DEFAULT_PRIMARY
   secondary: '',    // '' → use DEFAULT_SECONDARY
   font: DEFAULT_FONT,
@@ -119,6 +128,11 @@ export function effectiveAnchors(theme) {
 // --- Store ----------------------------------------------------------------
 
 let state = { ...DEFAULT_THEME };
+// A theme worn over this viewer's own while they inhabit someone else
+// (inhabit.js): applied on top of `state`, never persisted, and never what
+// getTheme()/the settings form reports — clearing it puts the viewer's own
+// theme straight back.
+let override = null;
 const subscribers = new Set();
 
 function loadState() {
@@ -158,6 +172,13 @@ export function setTheme(patch) {
   return getTheme();
 }
 
+// Wear `theme` (a partial theme — only the keys it carries replace this
+// viewer's own) until it is cleared with null.
+export function setThemeOverride(theme) {
+  override = theme && typeof theme === 'object' ? { ...theme } : null;
+  applyTheme();
+}
+
 export function subscribeTheme(fn) {
   subscribers.add(fn);
   return () => subscribers.delete(fn);
@@ -179,15 +200,16 @@ function applyInvert(doc, on) {
 export function applyTheme() {
   const doc = globalThis.document;
   const root = doc?.documentElement;
+  const worn = override ? { ...state, ...override } : state;
   if (root?.style) {
-    const { primary, secondary } = effectiveAnchors(state);
+    const { primary, secondary } = effectiveAnchors(worn);
     root.style.setProperty('--trussal-primary', primary);
     root.style.setProperty('--trussal-secondary', secondary);
-    root.style.setProperty('--trussal-font', state.font || DEFAULT_FONT);
-    root.style.setProperty('--trussal-font-scale', String(normalizeFontScale(state.fontScale)));
+    root.style.setProperty('--trussal-font', worn.font || DEFAULT_FONT);
+    root.style.setProperty('--trussal-font-scale', String(normalizeFontScale(worn.fontScale)));
   }
-  applyInvert(doc, state.invert);
-  setCssCyclesSuppressed(state.disableCss);
+  applyInvert(doc, worn.invert);
+  setCssCyclesSuppressed(worn.disableCss);
 }
 
 // --- Boot -------------------------------------------------------------

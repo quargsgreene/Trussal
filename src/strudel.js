@@ -32,11 +32,19 @@ import { installFileCycles, setFileAtoms, stopFileCycles } from './file-cycles.j
 import { hasFileCycles, rewriteFileCalls, FILE_CALL_RE } from './file-cycles-core.js';
 import { installPolls, setPollAtoms, stopPolls } from './polls.js';
 import { hasPollCycles, rewritePollCalls, POLL_CALL_RE } from './polls-core.js';
+import { installBreakout, setBreakoutAtoms, stopBreakout } from './breakout.js';
+import { BREAKOUT_CALL_RE, rewriteBreakoutCalls } from './breakout-core.js';
+import { installMeetingMove, setMeetingAtoms, stopMeetingMove } from './meeting-move.js';
+import { MEETING_CALL_RE, rewriteMeetingCalls } from './meeting-move-core.js';
+import { BACKING_CALL_RE, parseBackingCalls, stripBackingCalls } from './backing-core.js';
+import { syncLocalBackings } from './backing.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync, ensureCameraBypass } from './hydra-video.js';
 import { normalizePeerCode, splitHydraCode, programDeclaresHydra, usesExternalSource } from './hydra-code.js';
 import { readDirective } from './program-directive.js';
 import { textLog, textLogChanged, textWarn, registerTextProbe, clip } from './text-debug.js';
 import { wrapAsVoice } from './strudel-voice.js';
+import { installMultimedia } from './multimedia.js';
+import { injectMultiPeer } from './multimedia-core.js';
 // mondo notation for the personal editor: importing registers `mondo`/`mondolang`
 // as transpiler languages; the tag functions go into evalScope below.
 import { mondo, mondi, mondolang } from './mondo-notation.js';
@@ -233,6 +241,33 @@ function applyPollRewrite(code, peer) {
   return rewritten;
 }
 
+// Breakout atoms for the program currently being assembled — only ever the
+// local peer's (see buildPeerBlock), minted like poll()'s.
+let breakoutAtoms = {};
+let breakoutCounter = { n: 0 };
+
+function applyBreakoutRewrite(code, peer) {
+  const { code: rewritten, atoms } = rewriteBreakoutCalls(code, {
+    peer: peer.jitsiId,
+    counter: breakoutCounter,
+  });
+  Object.assign(breakoutAtoms, atoms);
+  return rewritten;
+}
+
+// Meeting-move atoms, minted the same way — see meeting-move.js.
+let meetingAtoms = {};
+let meetingCounter = { n: 0 };
+
+function applyMeetingRewrite(code, peer) {
+  const { code: rewritten, atoms } = rewriteMeetingCalls(code, {
+    peer: peer.jitsiId,
+    counter: meetingCounter,
+  });
+  Object.assign(meetingAtoms, atoms);
+  return rewritten;
+}
+
 // A bot's contribution to this page's program: its Text/CSS Cycles
 // statements, or nothing at all.
 //
@@ -295,7 +330,7 @@ function buildBotSilentBlock(peer) {
     ...(silentOnly ? {} : { why: 'declares Text/CSS Cycles but nothing silent survived the split' }),
   });
   if (!silentOnly) return null;
-  return buildStrudelVoice(silentOnly, '');
+  return buildStrudelVoice(silentOnly, '', peer);
 }
 
 // Build a labeled Strudel voice string from code that is known to be a Strudel
@@ -307,13 +342,17 @@ function buildBotSilentBlock(peer) {
 // whole thing in one (...)" or "only handle code before the first label"
 // approach breaks the moment a performer's code combines an audio voice with
 // a separate $: css(...)/$: word(...) voice.
-function buildStrudelVoice(rawCode, fx) {
+function buildStrudelVoice(rawCode, fx, peer) {
   // Data packs: "Weather:3" → _data('Weather',3,…) before the transpiler can
   // mini-parse it into a sound:index object. Applied here rather than in
   // buildPeerBlock so it only ever sees Strudel code — a Hydra or Text Cycles
   // preamble has already been split off, and its H("Weather:3") is resolved by
   // hydra-params instead.
-  return wrapAsVoice(rewriteDataRefs(rawCode), fx);
+  //
+  // multiArrange()/multiStack() learn whose code they are in here, so an
+  // arrangement resumes on its own author's turns and plays only the media
+  // this page may play for them (see multimedia.js).
+  return wrapAsVoice(injectMultiPeer(rewriteDataRefs(rawCode), peer?.jitsiId), fx);
 }
 
 // --- Delayed Streaming: code-state delay-line --------------------------------
@@ -454,6 +493,15 @@ function buildPeerBlock(peer) {
     return null;
   }
 
+  // backing(): a declaration the aggregator acts on, never a voice here (see
+  // backing-core.js) — stripped from every peer's block, and the author's own
+  // browser ships the declared files to the aggregator.
+  if (BACKING_CALL_RE.test(code)) {
+    if (peer.isLocal) syncLocalBackings(parseBackingCalls(code));
+    code = stripBackingCalls(code).trim();
+    if (!code) return null;
+  }
+
   // liveCapture(): re-emit the medium and source-name strings as
   // transpiler-proof literals, and for remote peers swap in the silent stub —
   // capture belongs to the authoring browser, but the pattern shape (struct,
@@ -472,6 +520,15 @@ function buildPeerBlock(peer) {
     code = appendRendererCalls(code, PANEL_CALL_RE, '._pbRender()');
   } else if (REACTION_CALL_RE.test(code) || PANEL_CALL_RE.test(code)) {
     code = stripCalls(stripCalls(code, REACTION_CALL_RE), PANEL_CALL_RE);
+  }
+  // breakout()/assign(): the same local-only rule, so a request fires once,
+  // from its author — breakout.js relays it to the moderator who acts on it.
+  if (BREAKOUT_CALL_RE.test(code)) {
+    code = peer.isLocal ? applyBreakoutRewrite(code, peer) : stripCalls(code, BREAKOUT_CALL_RE);
+  }
+  // meeting(): the same again — each browser it names moves itself.
+  if (MEETING_CALL_RE.test(code)) {
+    code = peer.isLocal ? applyMeetingRewrite(code, peer) : stripCalls(code, MEETING_CALL_RE);
   }
 
   // Per-human publish isolation: while a remote aggregator is present, this
@@ -594,14 +651,14 @@ function buildPeerBlock(peer) {
     // — an External Source Hydra-only block from a remote peer — and the
     // empty string is filtered out by rebuildAndEvaluate's Boolean filter.)
     if (!strudelCode) return outPreamble;
-    return outPreamble ? `${outPreamble}\n\n${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
+    return outPreamble ? `${outPreamble}\n\n${buildStrudelVoice(strudelCode, fx, peer)}` : buildStrudelVoice(strudelCode, fx, peer);
   }
 
   if (remoteVoiceExcluded) return null;
 
   // Simple expression pattern: wrap as an anonymous $: voice so multiple peers
   // are collected into pPatterns and stacked by applyPatternTransforms.
-  return buildStrudelVoice(code, fx);
+  return buildStrudelVoice(code, fx, peer);
 }
 
 async function loadStrudel() {
@@ -709,7 +766,18 @@ async function ensureStrudel() {
     // source, so Cyclist silently drops most triggers under normal use. Falls
     // back to Cyclist automatically where SharedWorker is unavailable (older
     // mobile Safari) — see strudel-fork's repl.mjs.
-    await initStrudel({ audioContext: audioCtx, sync: true });
+    //
+    // onEvalError: Strudel's evaluate() catches a failed program itself (a
+    // SyntaxError, an unknown function), logs it to the console and resolves
+    // normally — rebuildAndEvaluate's catch below never sees it, and the
+    // studio went on saying "Playing" over silence. Hand it to the studio.
+    await initStrudel({
+      audioContext: audioCtx,
+      sync: true,
+      onEvalError: (err) => document.dispatchEvent(new CustomEvent('trussal-strudel-eval-error', {
+        detail: String(err?.message ?? err),
+      })),
+    });
     // runPrebake fetches every CDN sample pack (piano, VCSL, drum machines,
     // Dirt-Samples, …) — tens of MB. Passing it as initStrudel's `prebake`
     // would block on the whole download before evaluate() below can run: on
@@ -749,6 +817,12 @@ async function ensureStrudel() {
     // Meeting-poll patterns: poll()/close()/vote() plus initPolls(). Silent
     // by construction, minted like word() — see polls.js.
     const pollScope = installPolls(mod);
+    // Breakout-room patterns: breakout()/assign(). Local-only and silent by
+    // construction — see breakout.js.
+    const breakoutScope = installBreakout(mod);
+    // Meeting-move patterns: meeting(). Local-only and silent by
+    // construction — see meeting-move.js.
+    const meetingScope = installMeetingMove(mod);
     // _data("Name",N): what the "Weather:3" rewrite calls. Falls back to mini
     // notation when the name is not a loaded pack, so a rewritten sound
     // reference behaves exactly as it did before data packs existed.
@@ -766,7 +840,11 @@ async function ensureStrudel() {
       try { ensureCameraBypass(); } catch (e) { console.warn('[strudel] camera bypass failed', e); }
       return result;
     };
-    await mod.evalScope({ sliderWithID, _jpGate, liveCapture, _liveCaptureSilent, _data, initHydra, mondo, mondi, mondolang, ...textScope, ...cssScope, ...reactionScope, ...panelScope, ...fileScope, ...pollScope });
+    // multiArrange()/multiStack(): arrange() and stack() across every medium
+    // above plus Hydra, the arrangement resuming on each performer's turns —
+    // see multimedia.js.
+    const multimediaScope = installMultimedia(mod);
+    await mod.evalScope({ sliderWithID, _jpGate, liveCapture, _liveCaptureSilent, _data, initHydra, mondo, mondi, mondolang, ...textScope, ...cssScope, ...reactionScope, ...panelScope, ...fileScope, ...pollScope, ...breakoutScope, ...meetingScope, ...multimediaScope });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
@@ -787,6 +865,10 @@ async function rebuildAndEvaluate() {
   fileCounter = { n: 0 };
   pollAtoms = {};
   pollCounter = { n: 0 };
+  breakoutAtoms = {};
+  breakoutCounter = { n: 0 };
+  meetingAtoms = {};
+  meetingCounter = { n: 0 };
 
   const blocks = getAllPeers()
     .map(delayedPeerView)
@@ -842,6 +924,8 @@ async function rebuildAndEvaluate() {
     publishCssSheets(cssSheets);
     setFileAtoms(fileAtoms);
     setPollAtoms(pollAtoms);
+    setBreakoutAtoms(breakoutAtoms);
+    setMeetingAtoms(meetingAtoms);
   }
 
   if (next === lastEvaluated) return;
@@ -962,6 +1046,8 @@ export async function stopStrudel() {
   // Text Cycles' bubbles do — only new ones stop.
   stopFileCycles();
   stopPolls();
+  stopBreakout();
+  stopMeetingMove();
   anyPlaying = false;
   lastEvaluated = null;
   activeSliders = {};

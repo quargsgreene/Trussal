@@ -111,10 +111,10 @@ async function aggregatorMain() {
     sampleRate: Number(env('SAMPLE_RATE', '48000')),
     // Gain-staging ceiling for the assembled master (full scale = 1.0).
     gainCeiling: Number(env('GAIN_CEILING', '1.0')),
-    // Delayed Streaming: DELAYED_STREAMING=1 makes it the boot default (the
-    // room's Studio toggle, over the CRDT settings map, overrides it at
-    // runtime). BACKLOG_MS caps the per-performer off-turn backlog.
-    delayedStreaming: env('DELAYED_STREAMING', '') === '1',
+    // Delayed Streaming: on by default; DELAYED_STREAMING=0 turns it off at
+    // boot (an explicit key in the CRDT settings map overrides it at runtime).
+    // BACKLOG_MS caps the per-performer off-turn backlog.
+    delayedStreaming: env('DELAYED_STREAMING', '') !== '0',
     backlogMs: env('BACKLOG_MS', '') ? Number(env('BACKLOG_MS', '')) : undefined,
     // Claim the room's single aggregator slot before joining; a losing bot exits
     // without ever joining Jitsi (see AggregatorBot #claimAggregatorSlot).

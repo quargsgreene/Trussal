@@ -1,0 +1,17 @@
+{
+  "metaprogram": "$ participants <0 1>\n# ring\n",
+  "humans": {
+    "0": {
+      "displayName": "Left Hand",
+      "code": {
+        "strudel": "$: s(\"bd ~ sd ~\").bank(\"RolandTR909\")"
+      }
+    },
+    "1": {
+      "displayName": "Right Hand",
+      "code": {
+        "strudel": "$: n(\"0 2 4 <5 7>\").scale(\"D4:dorian\").s(\"piano\")"
+      }
+    }
+  }
+}

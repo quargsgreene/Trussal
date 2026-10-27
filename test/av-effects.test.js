@@ -90,6 +90,14 @@ test('crush: a bogus metric falls back rather than poisoning the numbers', () =>
 });
 
 
+// Resolve `# noise …` the way the aggregator does, so these exercise the
+// written syntax rather than a hand-built parameter object.
+function noiseFor(line, metrics, cycle = 0) {
+  const { ast, errors } = parseMetaprogram(`$ participants <0>\n${line}\n`);
+  assert.deepEqual(errors, [], `${line} should parse`);
+  return noiseParams(metrics, resolveEffectParams(ast.chain[0], { cycle }));
+}
+
 test('noise: each axis modulates only when its own factor is written', () => {
   // Spectrum named, volume not: the bed brightens but stays at the floor.
   const p = noiseFor('# noise "wcl" 1', { wcl: 500 });

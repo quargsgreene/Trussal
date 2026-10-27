@@ -43,6 +43,7 @@ import {
 import { attachPanelControls, isHeadDragActive } from './panel-drag-resize.js';
 import { DEFAULT_GESTURE_MAPPINGS, CURSOR_TUNING } from './landmark-gesture-core.js';
 import { applyRegexMutation } from './editor-router-core.js';
+import { getTheme, subscribeTheme } from './theme-context.js';
 
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
@@ -936,7 +937,16 @@ function _syncHydraShare() {
   else if (!want && _sharedWithHydra) { setVideoStream(null); _sharedWithHydra = false; }
 }
 
+// The Personal Theme's "Disable MediaPipe" box. While it is checked nothing
+// here opens the camera or loads a model — every enable path (the eye gesture
+// can't fire anyway, but →, the Face button and gestureAndLandmarkConfig can)
+// ends up at _startCamera, which refuses.
+function _mediaPipeDisabled() {
+  return !!getTheme().disableMediaPipe;
+}
+
 async function _startCamera() {
+  if (_mediaPipeDisabled()) return false;
   if (_cameraOn || _cameraStarting) return _cameraOn;
   _cameraStarting = true;
   _explicitlyStopped = false;
@@ -969,6 +979,8 @@ async function _startCamera() {
     // getUserMedia would be intercepted by the published-video override and
     // return the canvas the ROOM sees.
     _stream = await openCamera({ video: { width: 320, height: 240 } });
+    // "Disable MediaPipe" was checked while the models/camera were loading.
+    if (_mediaPipeDisabled()) { _stopCamera(); return false; }
     if (_videoEl) {
       _videoEl.srcObject = _stream;
       await _videoEl.play();
@@ -1210,7 +1222,7 @@ function _startWatchdog() {
   _watchdogTimer = setInterval(_healWatch, 1500);
 }
 function _healWatch() {
-  if (_explicitlyStopped) return;
+  if (_explicitlyStopped || _mediaPipeDisabled()) return;
   if (!document.getElementById(FG_PANEL_ID) || !document.getElementById(FG_CURSOR_ID)) {
     try { _ensureDOM(); } catch (e) { console.error('[facial-gesture] panel re-init failed', e); }
   }
@@ -1315,6 +1327,23 @@ export function startFacialWatch() {
   _startWatchdog();
   return _startCamera();
 }
+
+// Checking "Disable MediaPipe" takes the whole mode down and releases the
+// camera and models; unchecking it brings back the watch-only state that would
+// have been running from page load.
+let _wasMediaPipeDisabled = _mediaPipeDisabled();
+subscribeTheme((t) => {
+  const disabled = !!t.disableMediaPipe;
+  if (disabled === _wasMediaPipeDisabled) return;
+  _wasMediaPipeDisabled = disabled;
+  if (typeof window === 'undefined' || window.__trussalIsBot || window.__trussalIsAggregator) return;
+  if (disabled) {
+    _disableMediapipeUI();
+    _stopCamera();
+  } else {
+    startFacialWatch();
+  }
+});
 
 /** Hard stop — release the camera and tear the detector down. */
 export function stopFacial() {

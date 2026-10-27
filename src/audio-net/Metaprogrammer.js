@@ -189,34 +189,20 @@ export function getInducedMetrics() {
   return crdt ? crdt.getInduced() : {};
 }
 
+// Matches the aggregator's DEFAULT_BACKLOG_MS, so an unstamped room still
+// reads one delay on every side.
 export const DEFAULT_STREAM_DELAY_MS = 30000;
 
+// Delayed Streaming is always on unless the settings map explicitly says
+// `delayedStreaming: false` (there is no UI toggle any more).
 export function isDelayedStreaming() {
-  return !!(crdt && crdt.getSettings && crdt.getSettings().delayedStreaming);
+  return !!(crdt && crdt.getSettings && crdt.getSettings().delayedStreaming !== false);
 }
 
 export function getStreamDelayMs() {
-  if (!crdt || !crdt.getSettings) return 0;
-  const s = crdt.getSettings();
-  if (!s.delayedStreaming) return 0;
-  const ms = Number(s.backlogMs);
+  if (!isDelayedStreaming()) return 0;
+  const ms = Number(crdt.getSettings().backlogMs);
   return Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_STREAM_DELAY_MS;
-}
-
-export function setDelayedStreaming(on) {
-  const sync = ensureMetaprogramSync();
-  sync.setSetting('delayedStreaming', !!on);
-  // Stamp the delay the first time it is switched on so browsers and the
-  // aggregator share one number; leave an already-set value (an operator's
-  // BACKLOG_MS override that reached the map) untouched.
-  if (on && !(Number(sync.getSettings().backlogMs) > 0)) {
-    sync.setSetting('backlogMs', DEFAULT_STREAM_DELAY_MS);
-  }
-}
-
-// fn(bool) on every change (local flip included, so a button can paint itself).
-export function onDelayedStreamingChange(fn) {
-  return ensureMetaprogramSync().onSettingsChange((s) => fn(!!s.delayedStreaming));
 }
 
 // VLAN grouping: place peers into an additional named VLAN with its own
@@ -274,7 +260,13 @@ function pushProgramToScheduler() {
   currentAst = ast;
   if (scheduler) scheduler.setProgram(ast);
   if (effects) effects.setChain(ast.chain, effectiveWorstCase());
+  // `# out` routes are acted on by output-route.js in every browser, whether
+  // or not JPattern is running here.
+  document.dispatchEvent(new CustomEvent('trussal-metaprogram-chain', { detail: { chain: ast.chain } }));
 }
+
+// The `#` chain of the last program that parsed clean, or [] before one has.
+export function getProgramChain() { return (currentAst && currentAst.chain) || []; }
 
 export function applyProgramText(text, { broadcast = true } = {}) {
   const { errors, valid } = parseMetaprogram(text);
@@ -295,6 +287,11 @@ export function applyProgramText(text, { broadcast = true } = {}) {
 }
 
 export function getProgramText() { return programText; }
+// Seconds per beat of the last program that parsed clean (`# tempo`), or the
+// scheduler's 120 bpm default when there is none. Every client applies the
+// same program, so every client gets the same beat — which is what lets a
+// beat-relative duration like Text Cycles' quantize() land identically.
+export function getBeatSeconds() { return beatSeconds(currentAst && currentAst.tempo); }
 export function broadcastStopSignal() {
   ensureMetaprogramSync().broadcastStop();
 }

@@ -39,6 +39,13 @@ import { textLog, textLogChanged, textHapLog, textWarn, registerTextProbe, clip 
 // mutations are pure and SEEDED there, so every browser paints the same
 // characters from the same shared program.
 import { crushWord, noiseWord, mutateNumber } from './audio-net/av-effects/TextState.js';
+import { speakText, stopSpeech, plainArg } from './speech.js';
+// An uploaded emoji's :shortcode: in a word paints as its picture.
+import { fillWithEmoji } from './custom-emoji.js';
+import { preloadIpa } from './ipa-voice.js';
+import { pitchFromValue } from './ipa-core.js';
+import { getBeatSeconds } from './audio-net/Metaprogrammer.js';
+import { silentRenderer } from './multimedia-core.js';
 
 const CONTAINER_ID = 'trussal-text-cycles';
 const STYLE_ID = 'trussal-text-cycles-style';
@@ -71,6 +78,9 @@ const CSS_BY_PARAM = [
 // so tokens in the program about to run always resolve against their own text.
 export function setTextAtoms(table) {
   atoms = table || {};
+  // Any word written in IPA is fetched now, before it is painted, so its
+  // first `.speak()` is not late by a round trip to /assets/ipa.
+  for (const { text } of Object.values(atoms)) preloadIpa(text);
   // STORAGE POINT 4: the words as characters, keyed by the token the program
   // carries. A token the renderer cannot find here paints as raw "tc7".
   textLogChanged('atoms', {
@@ -415,7 +425,7 @@ function echoLastWord(peerId) {
   for (let i = 1; i <= repeats; i++) {
     const echo = document.createElement('span');
     echo.className = `tc-word tc-echo ${peerClass}`;
-    echo.textContent = text;
+    fillWithEmoji(echo, text, peerId);
     // Each repeat quieter than the last, as a delay's are. The alpha is read
     // by the .tc-echo rule (text-cycles.css).
     echo.style.setProperty('--tc-echo-opacity', String(Math.max(0.05, alpha * Math.pow(0.6, i))));
@@ -483,7 +493,7 @@ function paint(value, cycle) {
 
   const span = document.createElement('span');
   span.className = `tc-word ${peerClass}`;
-  span.textContent = text;
+  fillWithEmoji(span, text, peerId);
 
   const styleFx = active ? active.css : null;
   for (const [param, prop] of CSS_BY_PARAM) {
@@ -541,6 +551,28 @@ function paint(value, cycle) {
 
   if (line.childNodes.length) line.appendChild(document.createTextNode(' '));
   line.appendChild(node);
+  // `.out("monitor")` mirrors painted words onto a routed screen (see
+  // output-route.js) — the painted text, so effects read the same there.
+  document.dispatchEvent(new CustomEvent('trussal-text-painted', {
+    detail: { peerId, peerClass, cycle, text: node.textContent },
+  }));
+
+  // `.speak()` — read the word aloud as it lands. The painted text, not the
+  // authored one, so a crushed or noised word is heard the way it reads.
+  // A `freq` or `note` on the hap (note names, MIDI numbers, `.scale()`'s
+  // output, `run()` fed through either) sings the word at that pitch, and
+  // `.quantize(n)` gives each of its sounds n beats of the Metaprogram's
+  // `# tempo` — both read by the IPA voice, the only one that can do either.
+  if (value.tcspeak) {
+    const q = Number(value.quantize);
+    speakText(text, {
+      lang: value.tcspeaklang,
+      voice: value.tcspeakvoice,
+      key: peerId,
+      pitch: pitchFromValue(value),
+      quantize: q > 0 ? q * getBeatSeconds() : null,
+    });
+  }
 
   // The last thing that can be said about a word: it is in the DOM. Whether a
   // human can SEE it is the container's question, one line up — a span in a
@@ -620,10 +652,34 @@ export function installTextCycles(mod) {
     ...registerControl('hover'),
     ...registerControl('hyperlink'),
     ...registerControl('underline'),
+    // Beats per spoken sound (see paint). A control, so it patterns like any
+    // other: .quantize("<1 0.5>") halves every other cycle.
+    ...registerControl('quantize'),
   };
 
   // Dominant trigger: this is what makes a text voice silent.
-  register('_tcRender', (pat) => pat.onTrigger(handleTrigger, true));
+  register('_tcRender', silentRenderer(handleTrigger, 'text'));
+
+  // `.speak(lang?, voice?)` replaces Strudel's own speak (speak.mjs). That one
+  // reads hap.value straight from the scheduler, which on a text voice is a
+  // control object holding a placeholder token — "[object Object]" at best —
+  // and it fires ahead of the beat, before the turn gate or the room's `#`
+  // effects have had their say. Here a text voice only gets flagged, and
+  // paint() speaks the word it actually puts in the chat. Bypasses register():
+  // its arity check would make both arguments mandatory, and they were always
+  // meant to be optional. A plain value pattern ("<hi there>".speak()) keeps
+  // the original behaviour, silenced the same way.
+  mod.Pattern.prototype.speak = function (lang, voice) {
+    const opts = { lang: plainArg(lang), voice: plainArg(voice) };
+    return this
+      .fmap((v) => (v && typeof v === 'object'
+        ? { ...v, tcspeak: true, tcspeaklang: opts.lang, tcspeakvoice: opts.voice }
+        : v))
+      .onTrigger((hap) => {
+        const v = hap?.value;
+        if (v != null && typeof v !== 'object') speakText(String(v), opts);
+      }, true);
+  };
 
   scope.initTextCycles = async () => {
     const wasActive = active;
@@ -662,6 +718,8 @@ export function stopTextCycles() {
   lastWordOfTurn.clear();
   previousTurnStyle.clear();
   wordCounters.clear();
+  // Speech stops with the music too — a queued word is not history.
+  stopSpeech();
 }
 
 // Everything the renderer is holding right now, for __trussalText.state().

@@ -79,9 +79,32 @@ COPY src/file-cycles-core.js /repo/src/file-cycles-core.js
 # hydra-code.js also imports it: POLL_CALL_RE, the poll() call shape. Same two
 # entries.
 COPY src/polls-core.js /repo/src/polls-core.js
+# `# inhabit`'s rules (src/inhabit-core.js): MetaprogrammerParser.js imports
+# it to read the directive, and the aggregator to resolve the map each cycle
+# and fold guests' audio into their hosts' slots. It imports breakout-core.js
+# for the room planner, which in turn imports text-cycles-core.js (above).
+# Same two entries each.
+COPY src/inhabit-core.js /repo/src/inhabit-core.js
+# permissionsConfig(...) (src/permissions-config.js): hydra-code.js strips the
+# declaration with it, and bot.js hands its statement shape to the page
+# scripts. Imports bot-config.js and inhabit-core.js, both copied. Same two
+# entries.
+COPY src/permissions-config.js /repo/src/permissions-config.js
+COPY src/breakout-core.js /repo/src/breakout-core.js
 # HMR stable-state (for persistent Yjs/WS state across hot reloads).
 # Required by MetaprogrammerCrdtSync.js in the bot image.
 COPY src/stable-state.js /repo/src/stable-state.js
+# Backing voices (src/backing-core.js): cluster-source.js reads BACKING_CALL_RE,
+# aggregator-bot.js resolves each peer's backings. Imports only files copied
+# above. Same two entries.
+COPY src/backing-core.js /repo/src/backing-core.js
+# hydra-code.js also imports it: the output-route directive rule. Same two
+# entries.
+COPY src/output-route-core.js /repo/src/output-route-core.js
+# hydra-code.js also imports it: MULTI_CALL_RE, so a performer drawing Hydra
+# through multiArrange()/multiStack() is blitted rather than re-executed.
+# Imports only file-cycles-core.js, copied above. Same two entries.
+COPY src/multimedia-core.js /repo/src/multimedia-core.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules

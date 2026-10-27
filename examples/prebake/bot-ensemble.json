@@ -1,0 +1,69 @@
+{
+  "metaprogram": "$ participants <0 0a 0b 0c>\n# ring\n# cycles \"wcl\" 16\n",
+  "humans": {
+    "0": {
+      "displayName": "Conductor",
+      "code": {
+        "strudel": "$: s(\"kit*2\").n(\"<0 1>\")",
+        "samples": {
+          "kit": [
+            {
+              "name": "kick.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/bd/BT0A0A7.wav"
+            },
+            {
+              "name": "snare.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/sn/ST0T0S0.wav"
+            },
+            {
+              "name": "hat.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/hh/000_hh3closedhh.wav"
+            }
+          ]
+        }
+      },
+      "enableMediaPipe": false
+    }
+  },
+  "bots": {
+    "0a": {
+      "displayName": "Kick Bot",
+      "code": {
+        "strudel": "$: s(\"kit\").n(\"0*4\")",
+        "samples": {
+          "kit": [
+            {
+              "name": "kick.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/bd/BT0A0A7.wav"
+            },
+            {
+              "name": "snare.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/sn/ST0T0S0.wav"
+            },
+            {
+              "name": "hat.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/hh/000_hh3closedhh.wav"
+            }
+          ]
+        }
+      }
+    },
+    "0b": {
+      "displayName": "Snare Bot",
+      "code": {
+        "strudel": "$: s(\"kit\").n(\"~ 1 ~ 1\")"
+      }
+    },
+    "0c": {
+      "displayName": "Hat Bot",
+      "code": {
+        "strudel": "$: s(\"kit\").n(\"2*8\").gain(0.5)"
+      }
+    }
+  },
+  "meetingChat": {
+    "Conductor": {
+      "text": "Bots are warming up - press Play when the tiles appear."
+    }
+  }
+}

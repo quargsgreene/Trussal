@@ -1,0 +1,125 @@
+{
+  "snippets": [
+    {
+      "name": "Drum kit",
+      "type": "assetPack",
+      "medium": "audio",
+      "description": "Kick, snare and hats as the \"kit\" bank.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiM2ZDRjNDEiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj5LSVQ8L3RleHQ+PC9zdmc+",
+      "thumbnailAudio": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/bd/BT0A0A7.wav",
+      "assets": {
+        "samples": {
+          "kit": [
+            {
+              "name": "bd.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/bd/BT0A0A7.wav"
+            },
+            {
+              "name": "sn.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/sn/ST0T0S0.wav"
+            },
+            {
+              "name": "hh.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/hh/000_hh3closedhh.wav"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Snare hit",
+      "type": "assetPack",
+      "medium": "audio",
+      "singleShot": true,
+      "description": "Click to play one snare into the room on your turn.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiNjNjI4MjgiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj5TTjwvdGV4dD48L3N2Zz4=",
+      "thumbnailAudioHover": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/hh/000_hh3closedhh.wav",
+      "thumbnailAudioClick": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/sn/ST0T0S0.wav",
+      "assets": {
+        "samples": {
+          "snare": [
+            {
+              "name": "sn.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/sn/ST0T0S0.wav"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Welcome text",
+      "type": "assetPack",
+      "medium": "text",
+      "singleShot": true,
+      "description": "Click to post a welcome line to the chat on your turn.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiM0NTVhNjQiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj5UWFQ8L3RleHQ+PC9zdmc+",
+      "assets": {
+        "files": {
+          "text": [
+            {
+              "name": "welcome.txt",
+              "src": "data:text/plain;base64,V2VsY29tZSB0byB0aGUgc2V0IQ=="
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Four on the floor",
+      "type": "pattern",
+      "medium": "audio",
+      "language": "strudel",
+      "operands": 0,
+      "description": "A plain kick on every beat.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMyZTdkMzIiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj40LzQ8L3RleHQ+PC9zdmc+",
+      "source": "$: s(\"bd*4\")"
+    },
+    {
+      "name": "Play bank",
+      "type": "pattern",
+      "medium": "audio",
+      "language": "strudel",
+      "operands": 1,
+      "description": "Plays operand 1 (drop an asset pack in it) as an eighth-note groove.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMxNTY1YzAiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj5QTEFZPC90ZXh0Pjwvc3ZnPg==",
+      "source": "$: s(\"{{0}}*8\").n(\"<0 1 2 1>\").gain(0.8)"
+    },
+    {
+      "name": "Noise clouds",
+      "type": "pattern",
+      "medium": "video",
+      "language": "hydra",
+      "operands": 0,
+      "description": "Slow coloured noise.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiM2YTFiOWEiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj5IWTwvdGV4dD48L3N2Zz4=",
+      "source": "noise(3, 0.1).color(0.6, 0.3, 0.9).out()"
+    },
+    {
+      "name": "On my turn",
+      "type": "flow",
+      "language": "javascript",
+      "operands": 2,
+      "description": "Runs operand 1 when it is your turn in the ring, operand 2 otherwise.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiNlZjZjMDAiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj5JRjwvdGV4dD48L3N2Zz4=",
+      "source": "return ctx.isMyTurn ? operands[0] : operands[1];"
+    },
+    {
+      "name": "Stack",
+      "type": "flow",
+      "language": "javascript",
+      "operands": 2,
+      "description": "Plays two Strudel patterns at once.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMwMDgzOGYiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj4rPC90ZXh0Pjwvc3ZnPg==",
+      "source": "return { language: \"strudel\", source: `$: stack(${operands[0].value.replace(/^\\$:\\s*/, \"\")}, ${operands[1].value.replace(/^\\$:\\s*/, \"\")})` };"
+    },
+    {
+      "name": "Duo metaprogram",
+      "type": "room",
+      "description": "Sets the shared metaprogram to alternate participants 0 and 1.",
+      "thumbnailImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMzNzQ3NGYiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmZmIj5NUDwvdGV4dD48L3N2Zz4=",
+      "source": {
+        "metaprogram": "$ participants <0 1>\n# ring\n"
+      }
+    }
+  ]
+}

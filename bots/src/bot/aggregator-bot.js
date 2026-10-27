@@ -15,6 +15,7 @@ import {
   pageForcePreserveDrawingBuffer,
   pageInstallPageStyles, PAGE_SCRIPTS_CSS,
   pageInstallAudioWorklet, PAGE_AUDIO_WORKLET_SOURCE, pageCapAnimationFrames,
+  pageBacking, pageSetBacking, pageLoadBacking, pageSetBackingActive,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { encodePcm, decodePcm } from './pcm-wire.js';
@@ -22,6 +23,7 @@ import { CircularParticipantQueue, tokenOrder } from './circular-participant-que
 import { createMetaprogramDoc, connectMetaprogramSync } from '../../../src/audio-net/MetaprogrammerCrdtSync.js';
 import { parseMetaprogram, buildDefaultProgram, resolveEffectParams, mosaicEnabled } from '../../../src/audio-net/MetaprogrammerParser.js';
 import { mosaicCellsForPeers, cellsEqual } from '../../../src/audio-net/MosaicCells.js';
+import { backingsForPeers, backingsEqual, backingKey } from '../../../src/backing-core.js';
 import { reconcileSlots, layoutCells } from '../../../src/audio-net/MosaicLayout.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics } from '../../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { roomParams } from '../../../src/audio-net/av-effects/Room.js';
@@ -39,6 +41,7 @@ import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
 import { orderTokens } from '../../../src/audio-net/TurnRing.js';
+import { resolveInhabitMap, inhabitMapsEqual, foldInhabitantSamples, sanitizeInhabitMap } from '../../../src/inhabit-core.js';
 
 // How often the ingest loop drains the page tap into the buffers.
 const DEFAULT_INGEST_INTERVAL_MS = 100;
@@ -388,6 +391,16 @@ export class AggregatorBot extends Bot {
     // sampled by whole cycle, so this alone is what it needs, and it is also
     // what room falls back to before the first boundary has been scheduled.
     #cycle = 0;
+    // `# inhabit` (src/inhabit-core.js): the applied program's entries, and
+    // the guest → host map they resolve to at the current cycle — reported to
+    // the room on every change, and used at ingest to hear each guest in its
+    // host's slot.
+    #inhabitEntries = [];
+    #inhabitMap = {};
+    // The map the sidecar says is IN FORCE: the reported one less every pair
+    // a host's permissionsConfig refuses. null until a sidecar has answered
+    // (and always, with no sidecar), when this bot's own map stands.
+    #confirmedInhabit = null;
     // The last cycle-start the scheduler EMITTED, for the effects that sample
     // at a fractional position rather than a whole cycle: crush and echo take
     // `[…]` subdivisions too, and echo's delay is written in cycles so it
@@ -413,6 +426,13 @@ export class AggregatorBot extends Bot {
     #mosaicSlots = [];
     #lastMosaicEnabled = null;
     #lastMosaicActive = undefined;
+    // Backing voices (src/backing-core.js). Files arrive over the bus, keyed
+    // by (author token, filename); declarations are read off the roster. The
+    // pushed list gates the crossing into the page the same way the mosaic
+    // cells do — a roster update arrives on every metrics tick.
+    #backingFiles = new Map();   // backingKey -> { kind, mime, data }
+    #backings = null;            // last list pushed to the page
+    #lastBackingActive = undefined;
 
     constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl, onSlotLost } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
@@ -442,11 +462,11 @@ export class AggregatorBot extends Bot {
             ? this.#audioSamplesForMs(this.holdMs + LIVE_HEADROOM_MS)
             : this.holdSamples;
         this.epoch = null;
-        // Delayed Streaming: the room-wide toggle's boot default (env
-        // DELAYED_STREAMING=1) and the per-participant backlog cap in ms. The
+        // Delayed Streaming: on unless the config says `false` (env
+        // DELAYED_STREAMING=0), and the per-participant backlog cap in ms. The
         // CRDT settings map overrides the boot default at runtime via
         // #setDelayedStreaming; the cap is fixed for the bot's life.
-        this.#delayedStreaming = cfg.delayedStreaming === true;
+        this.#delayedStreaming = cfg.delayedStreaming !== false;
         this.backlogMs = cfg.backlogMs != null
             ? Math.max(1, Number(cfg.backlogMs))
             : DEFAULT_BACKLOG_MS;
@@ -592,6 +612,8 @@ export class AggregatorBot extends Bot {
         // the bot's published track. Installed before navigation like the tap,
         // primed to the same cushion the playback loop keeps it topped up to.
         await this.page.evaluateOnNewDocument(pageMasterPlayer, this.masterCushionMs);
+        // Backing voices mix into that same master bus, after the turn gate.
+        await this.page.evaluateOnNewDocument(pageBacking);
         await this.page.evaluateOnNewDocument(pageInstallVideoPublisher);
         await this.page.evaluateOnNewDocument(pageFpsSampler);
 
@@ -923,9 +945,9 @@ export class AggregatorBot extends Bot {
             // Shared induced-metric floors move the effective worst case the
             // same way a measured change does.
             this.metaprogramDoc.onModulationChange(() => this.#refreshWorstCase());
-            // Room-wide runtime toggles. Delayed Streaming is the only one:
-            // browsers flip it from the Studio's JPattern card and it rides the
-            // CRDT `settings` map to here. Observe fires for live diffs and the
+            // Room-wide runtime toggles. Delayed Streaming is the only one: on
+            // by default, and an explicit key in the CRDT `settings` map
+            // overrides that here. Observe fires for live diffs and the
             // late-join catch-up alike; apply whatever the doc already holds
             // once too, in case the catch-up landed before this observer. Only
             // an explicitly-set key overrides the boot default (env
@@ -1060,6 +1082,8 @@ export class AggregatorBot extends Bot {
         this.#chain = chain;
         this.#syncMasterEffects();
         this.#syncPatternLoop(chain);
+        this.#inhabitEntries = ast.inhabit || [];
+        this.#syncInhabit();
         // `# mosaic` is this bot's video arrangement, adopted with the program
         // the same way. A program that never mentions it tiles.
         this.#syncMosaicEnabled(mosaicEnabled(ast));
@@ -1403,6 +1427,60 @@ export class AggregatorBot extends Bot {
     }
 
     /**
+     * A performer's backing file, delivered over the bus. Stored by (author,
+     * filename) and re-synced so a declaration that was waiting on its bytes
+     * starts. A re-send of a file the page already plays is not reloaded —
+     * the page only asks for keys it has no file for.
+     */
+    onBackingFile(msg) {
+        if (msg.fromIndex == null || typeof msg.name !== 'string' || typeof msg.data !== 'string') return;
+        this.#backingFiles.set(backingKey(String(msg.fromIndex), msg.name),
+            { kind: msg.kind, mime: msg.mime, data: msg.data });
+        this.#backings = null;
+        this.#syncBacking();
+    }
+
+    /**
+     * The backings the room should hear right now: every playing human's
+     * declarations whose file has arrived. Gated on the list changing.
+     */
+    backingList() {
+        return backingsForPeers(this.#peers.values())
+            .filter((b) => this.#backingFiles.has(backingKey(b.token, b.name)));
+    }
+
+    #syncBacking() {
+        if (!this.page) return;
+        const list = this.backingList();
+        if (this.#backings && backingsEqual(list, this.#backings)) return;
+        this.#backings = list;
+        const payload = list.map((b) => ({ key: backingKey(b.token, b.name), ...b }));
+        Promise.resolve(this.page.evaluate(pageSetBacking, payload))
+            .then(async (needs) => {
+                for (const key of needs || []) {
+                    const file = this.#backingFiles.get(key);
+                    if (file) await this.page.evaluate(pageLoadBacking, key, file.mime, file.data);
+                }
+            })
+            .catch((e) => {
+                // Forget the push so the next roster change retries it.
+                this.#backings = null;
+                console.error('[aggregator-bot] backing push failed', e);
+            });
+    }
+
+    /** Whose turn the backing voices follow (turn-only ones play only then). */
+    #syncBackingActive(token) {
+        if (token === this.#lastBackingActive) return;
+        this.#lastBackingActive = token;
+        if (!this.page) return;
+        Promise.resolve(this.page.evaluate(pageSetBackingActive, token)).catch((e) => {
+            this.#lastBackingActive = undefined;
+            console.error('[aggregator-bot] backing active push failed', e);
+        });
+    }
+
+    /**
      * Anchor the page's cycle clock to a boundary the scheduler just emitted.
      * `inSeconds` is how far AHEAD of now that boundary falls — cycle events
      * are emitted with a lookahead, so it is normally still in the future and
@@ -1555,7 +1633,8 @@ export class AggregatorBot extends Bot {
      * lists but that nobody rejoined (reset to a silent placeholder). Either
      * way the leaver's stale audio is dropped; the routine cycle-boundary
      * re-adoption (programUpdate=false) retires nothing, so the ghost keeps
-     * replaying until the performer actually re-applies.
+     * replaying until the performer actually re-applies. A ghost still on the
+     * sidecar roster (moved into a breakout room) survives the re-apply too.
      */
     // Present participant tokens (room-index strings), aggregator excluded —
     // the input set for a bare `# ring`. Mirrors the browser's roster provider
@@ -1582,7 +1661,15 @@ export class AggregatorBot extends Bot {
         const tokenSequence = (ast.ring && ast.ring.mode === 'hash')
             ? orderTokens(this.#presentTokens(), { seed: this.#ringSeed(), weights: ast.ring.weights || null })
             : metaprogramTokenSequence(ast.participants);
-        const retired = this.order.applyMetaprogramOrder(tokenSequence, { programUpdate });
+        // A departed ghost whose participant is still on the sidecar roster is
+        // away in a breakout room (the sidecar room is the meeting URL, which a
+        // breakout move does not change), not gone: keep replaying its last
+        // buffer through a re-apply rather than resetting it to silence.
+        const present = new Set(this.#presentTokens());
+        const retired = this.order.applyMetaprogramOrder(tokenSequence, {
+            programUpdate,
+            isAway: (token) => present.has(token),
+        });
         if (!retired.length) return;
         this.buffers = Object.fromEntries(
             Object.entries(this.buffers).filter(([token]) => !retired.includes(token)),
@@ -1677,6 +1764,8 @@ export class AggregatorBot extends Bot {
             // percussive effect would need the timeline treatment instead.
             this.#cycle = ev.cycle;
             this.#cycleGrid = { cycle: ev.cycle, t: ev.t, seconds: ev.seconds };
+            // A patterned `# inhabit <0 ~>` moves guests on the boundary.
+            this.#syncInhabit();
             // crush and echo come along: a boundary is the only moment the
             // cycle LENGTH can change (the scheduler applies pending metrics
             // here, not when they arrived), and echo's delay is quoted in
@@ -1935,7 +2024,12 @@ export class AggregatorBot extends Bot {
                 this.#lastBroadcastActive = undefined;
                 this.#lastBroadcastIndex = undefined;
                 this.#lastBroadcastKind = undefined;
-                send({ type: 'hello', isFleet: true, displayName: `${this.cfg.name || 'aggregator'}-metaprogram-sync` });
+                // wantsBacking: this connection is where performers' backing
+                // files are delivered (and re-delivered on every reconnect).
+                send({ type: 'hello', isFleet: true, wantsBacking: true, displayName: `${this.cfg.name || 'aggregator'}-metaprogram-sync` });
+                // The sidecar forgets who reports `# inhabit` with this
+                // connection: claim it again, with the map in force.
+                send({ type: 'inhabit', map: this.#inhabitMap });
             },
             onMessage: (msg) => {
                 if (!msg || typeof msg.type !== 'string') return;
@@ -1956,20 +2050,30 @@ export class AggregatorBot extends Bot {
                         this.#recordPeerCode(p.peerId, p.pattern);
                     }
                     this.#refreshWorstCase();
+                    this.#syncBacking();
                 } else if (msg.type === 'peer-join' && msg.peer && msg.peer.peerId) {
                     this.#peers.set(msg.peer.peerId, msg.peer);
                     this.#recordPeerCode(msg.peer.peerId, msg.peer.pattern);
                     this.#refreshWorstCase();
+                    this.#syncBacking();
                 } else if (msg.type === 'peer-update' && msg.peerId) {
                     const rec = this.#peers.get(msg.peerId);
                     if (rec && msg.patch) {
                         Object.assign(rec, msg.patch);
                         if ('pattern' in msg.patch) this.#recordPeerCode(msg.peerId, rec.pattern);
                         this.#refreshWorstCase();
+                        if ('pattern' in msg.patch || 'playing' in msg.patch) this.#syncBacking();
                     }
                 } else if (msg.type === 'peer-leave' && msg.peerId) {
                     this.#peerCodeLog.delete(msg.peerId);
-                    if (this.#peers.delete(msg.peerId)) this.#refreshWorstCase();
+                    if (this.#peers.delete(msg.peerId)) {
+                        this.#refreshWorstCase();
+                        this.#syncBacking();
+                    }
+                } else if (msg.type === 'inhabit') {
+                    this.#confirmedInhabit = sanitizeInhabitMap(msg.map);
+                } else if (msg.type === 'backing-file') {
+                    this.onBackingFile(msg);
                 }
             },
         });
@@ -1992,6 +2096,38 @@ export class AggregatorBot extends Bot {
      * audio tick, which is why readAndAssembleMasterBuffer can call it every
      * tick. Best-effort: a dropped highlight update is purely cosmetic.
      */
+    /**
+     * Resolve `# inhabit` at the current cycle and, when the map moved, tell
+     * the room over the metaprogram bus — the sidecar caches it for late
+     * joiners and checks every guest/host exchange against it. This bot is the
+     * map's authority whenever it is in the room, being the one place the
+     * cycle count lives.
+     */
+    #syncInhabit() {
+        const next = resolveInhabitMap(this.#inhabitEntries, this.#cycle);
+        if (inhabitMapsEqual(next, this.#inhabitMap)) return;
+        this.#inhabitMap = next;
+        const conn = this.#metaprogramConn;
+        if (!conn || typeof conn.send !== 'function') return;
+        try { conn.send({ type: 'inhabit', map: next }); } catch (e) { /* re-sent on the next reconnect */ }
+    }
+
+    /**
+     * The `# inhabit` guest → host map in force (a copy): this bot's own,
+     * resolved this cycle, keeping only the pairs the sidecar has confirmed
+     * a host allows (permissionsConfig's allowInhabitFrom). Both have to
+     * agree, so a pair dropped this cycle is not heard while the sidecar's
+     * answer is still on its way, and a refused one is never heard at all.
+     */
+    getInhabitMap() {
+        if (this.#confirmedInhabit == null) return { ...this.#inhabitMap };
+        const out = {};
+        for (const [guest, host] of Object.entries(this.#inhabitMap)) {
+            if (this.#confirmedInhabit[guest] === host) out[guest] = host;
+        }
+        return out;
+    }
+
     #broadcastActiveToken(token, index, kind = null) {
         const t = token == null ? null : String(token);
         const i = Number.isInteger(index) ? index : null;
@@ -2001,6 +2137,7 @@ export class AggregatorBot extends Bot {
         // absorbs the heartbeat re-sends below, which exist to refill the
         // sidecar's cache and do not mean the turn moved.
         this.#syncMosaicActive(t);
+        this.#syncBackingActive(t);
         const now = Date.now();
         if (t === this.#lastBroadcastActive && i === this.#lastBroadcastIndex &&
             k === this.#lastBroadcastKind &&
@@ -2039,6 +2176,7 @@ export class AggregatorBot extends Bot {
             .filter((t) => t && t.token != null && t.samples && t.samples.length)
             .sort((a, b) => tokenOrder(a.token, b.token));
         const summary = {};
+        const pending = [];
         for (const take of arrived) {
             // Only accept valid normalized PCM: reject a capture whose samples are
             // out of range or the wrong type rather than writing NaN / a clipping
@@ -2073,7 +2211,14 @@ export class AggregatorBot extends Bot {
                 // backlog so Delayed Streaming rebuilds their delay from now.
                 this.#backlog.delete(token);
             }
-            const samples = take.samples;
+            pending.push({ token, samples: take.samples });
+        }
+        // `# inhabit`: a guest is heard in its host's place on the ring — its
+        // samples are mixed into the host's before anything is written, and
+        // its own slot gets nothing while it is away (inhabit-core.js). It was
+        // still registered and revived above under its own token, so it keeps
+        // its pin and is never mistaken for a departure.
+        for (const { token, samples } of foldInhabitantSamples(pending, this.getInhabitMap())) {
             const rb = this.participantBuffer(token);
             const evictedBefore = rb.evicted;
             rb.write(samples);

@@ -29,6 +29,8 @@ import { splitHydraCode, normalizePeerCode, stripCapabilityPreambles } from '../
 import { splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { LIVECAPTURE_CALL_RE } from '../../../src/live-capture-core.js';
+import { BACKING_CALL_RE } from '../../../src/backing-core.js';
+import { MULTI_CALL_RE } from '../../../src/multimedia-core.js';
 import { defaultBotConfig, parseBotConfig } from '../../../src/bot-config.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
 import { insertBeforeHydraOut } from '../shared/hydra-chain.js';
@@ -310,6 +312,35 @@ export function dropLiveCaptureStatements(strudel) {
 }
 
 /**
+ * Strip backing() declarations. Always applied to what the bot's OWN REPL
+ * evaluates: `backing` is undefined in that vanilla @strudel/repl, and a
+ * backing belongs to the human who uploaded its file — the aggregator plays
+ * it from their declaration (src/backing-core.js), never from a bot's.
+ */
+export function dropBackingStatements(strudel) {
+  return dropCapabilityParagraphs(strudel, {
+    initRe: /(?!)/, // never matches — backing has no init preamble
+    callRe: BACKING_CALL_RE,
+  });
+}
+
+/**
+ * Strip multiArrange()/multiStack() statements. Always applied to what the
+ * bot's OWN REPL evaluates: both are installed by the Trussal bundle's
+ * strudel.js (src/multimedia.js), never by the vanilla @strudel/repl a bot
+ * boots, so a cloned repertoire using them would throw ReferenceError on
+ * evaluate() exactly as liveCapture() did. The announce keeps them, so the
+ * per-page media inside one still reach the room through every viewer's own
+ * buildBotSilentBlock.
+ */
+export function dropMultimediaStatements(strudel) {
+  return dropCapabilityParagraphs(strudel, {
+    initRe: /(?!)/, // never matches — no init preamble
+    callRe: MULTI_CALL_RE,
+  });
+}
+
+/**
  * The {strudel, hydra} one bot boots with, before variation.js positions it in
  * the mix.
  *
@@ -438,7 +469,7 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // of them to strip here. Derived from the SAME shaped `strudel`
   // announceStrudel came from, so the two never diverge on what audio they
   // describe — only on whether a text/css/liveCapture voice rides along.
-  strudel = dropLiveCaptureStatements(dropCssStatements(dropTextStatements(strudel)));
+  strudel = dropMultimediaStatements(dropBackingStatements(dropLiveCaptureStatements(dropCssStatements(dropTextStatements(strudel)))));
   // A repertoire that was ENTIRELY capability-only content (live-confirmed:
   // a performer whose whole editor was `$: liveCapture(...)`, nothing else)
   // strips down to an empty string here — not just liveCapture-free but

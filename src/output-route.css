@@ -1,0 +1,25 @@
+/* output-route.css — the permission requests `.out("device")` raises
+   (src/output-route.js). Fixed colours rather than themed, like the panic
+   notices: a request to reach someone's hardware has to stay legible whatever
+   CSS Cycles has done to the page. Bottom-left, clear of the panic button. */
+
+#trussal-out-prompts {
+  position: fixed; left: 24px; bottom: 24px; z-index: 2147483000;
+  display: flex; flex-direction: column; gap: 8px;
+  max-width: min(380px, calc(100vw - 48px));
+}
+#trussal-out-prompts .out-prompt {
+  padding: 12px 14px; border-left: 4px solid #1e88e5; border-radius: 6px;
+  background: #111111; color: #ffffff;
+  font: 14px/1.4 system-ui, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+}
+#trussal-out-prompts .out-prompt p { margin: 0 0 10px; overflow-wrap: anywhere; }
+#trussal-out-prompts .out-prompt-actions { display: flex; gap: 8px; justify-content: flex-end; }
+#trussal-out-prompts button {
+  padding: 6px 14px; border-radius: 4px; border: 1px solid #ffffff;
+  font: 600 13px/1.2 system-ui, sans-serif; cursor: pointer;
+}
+#trussal-out-prompts .out-prompt-allow { background: #1e88e5; color: #ffffff; border-color: #1e88e5; }
+#trussal-out-prompts .out-prompt-deny { background: transparent; color: #ffffff; }
+#trussal-out-prompts button:focus-visible { outline: 3px solid #ffeb3b; outline-offset: 2px; }

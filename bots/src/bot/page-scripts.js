@@ -439,6 +439,8 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
     ? toRegex({ source: cap.directive.source, flags: (cap.directive.flags || '') + (String(cap.directive.flags || '').includes('m') ? '' : 'm') })
     : null;
   const stripDirectiveLine = (text) => (directiveRe ? String(text).replace(directiveRe, '') : text);
+  const permissionsRe = cap.permissionsConfig && typeof cap.permissionsConfig.source === 'string'
+    ? toRegex(cap.permissionsConfig) : null;
   const dropPairs = [
     [toRegex(cap.initTextCycles), toRegex(cap.word)],
     [toRegex(cap.initCss), toRegex(cap.css)],
@@ -540,6 +542,7 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   // its own from a leading word()/css() statement.
   const forBotRepl = (pushed) => {
     let out = pushed;
+    if (permissionsRe) out = out.replace(permissionsRe, (m, lead) => lead);
     for (const [initRe, callRe] of dropPairs) out = dropCapability(out, initRe, callRe);
     return out.trim() ? out : 'silence';
   };
@@ -2479,11 +2482,219 @@ export function pageMasterPlayer(primeMs = 400) {
     },
     queued,
     state() { return { queued: queued(), underruns: report.underruns, priming: report.priming }; },
+    // The master bus itself, for sources mixed in AFTER the turn gate
+    // (pageBacking): they join at busOut, so the `#` master effects still
+    // apply to them. Opens the context if nothing has yet.
+    graph() {
+      ensure();
+      return ctx && busOut ? { ctx, input: busOut } : null;
+    },
     setRoom,
     setNoise,
     setCrush,
     setEcho,
   };
+}
+
+/**
+ * Backing voices (src/backing-core.js): files a performer declared with
+ * `backing("file", loop, turnOnly, restart)`, played straight into the master
+ * bus rather than through any participant's ring, so they sound on every turn
+ * — or, turn-only, pause off-turn and resume where they left off. A stopped
+ * author's backings pause too, and resume on Play unless `restart` asks to
+ * start the file over. A video
+ * backing's picture is drawn full-frame beneath the mosaic's cells (see
+ * drawScene in pageMosaic, which reads `videos()`).
+ *
+ * Node pushes the declarations with set() (no bytes), which answers with the
+ * keys it has no file for yet; Node then sends each with load(). Holding the
+ * bytes page-side and asking for what is missing keeps a reloaded page and
+ * Node from disagreeing about what was already sent.
+ */
+export function pageBacking() {
+  if (window.__trussalBacking) return;
+  const entries = new Map();   // key -> { token, name, kind, loop, turnOnly, restart, playing, el, url, done }
+  let activeToken = null;
+  let gateTimer = null;
+  let stage = null;
+  const errors = [];
+
+  function noteError(where, e) {
+    const msg = `[trussal] backing ${where}: ${e && e.message ? e.message : e}`;
+    console.error(msg, e);
+    errors.push(msg);
+    if (errors.length > 32) errors.shift();
+  }
+
+  function ensureStage() {
+    if (stage) return stage;
+    stage = document.createElement('div');
+    stage.id = 'trussal-backing';
+    stage.className = 'trussal-offscreen';
+    (document.body || document.documentElement).appendChild(stage);
+    return stage;
+  }
+
+  function shouldPlay(entry) {
+    if (!entry.el || entry.done || !entry.playing) return false;
+    return !entry.turnOnly || entry.token === activeToken;
+  }
+
+  // pause() keeps currentTime, which is the whole of "picks up where it left
+  // off": a turn-only backing is simply paused for everyone else's turns.
+  function apply(entry) {
+    const el = entry.el;
+    if (!el) return;
+    if (shouldPlay(entry)) {
+      if (el.paused) el.play().catch((e) => noteError(`play ${entry.name}`, e));
+    } else if (!el.paused) {
+      el.pause();
+    }
+  }
+
+  function remove(key) {
+    const entry = entries.get(key);
+    if (!entry) return;
+    entries.delete(key);
+    if (!entry.el) return;
+    try {
+      entry.el.pause();
+      if (entry.node) entry.node.disconnect();
+      entry.el.remove();
+    } catch (e) {
+      noteError(`remove ${entry.name}`, e);
+    }
+    URL.revokeObjectURL(entry.url);
+  }
+
+  window.__trussalBacking = {
+    // `list`: [{ key, token, name, kind, loop, turnOnly, restart, playing }].
+    // Returns the keys
+    // that still need load().
+    set(list) {
+      const wanted = new Map((list || []).map((b) => [b.key, b]));
+      for (const key of [...entries.keys()]) if (!wanted.has(key)) remove(key);
+      const needs = [];
+      for (const [key, b] of wanted) {
+        let entry = entries.get(key);
+        if (!entry) {
+          entry = { token: b.token, name: b.name, kind: b.kind, el: null, url: null, node: null, done: false, playing: false };
+          entries.set(key, entry);
+        }
+        const started = !entry.playing && !!b.playing;
+        entry.loop = !!b.loop;
+        entry.turnOnly = !!b.turnOnly;
+        entry.restart = !!b.restart;
+        entry.playing = !!b.playing;
+        if (entry.el) {
+          entry.el.loop = entry.loop;
+          // Play pressed again: resume where it paused, unless the
+          // declaration asks to start over.
+          if (started && entry.restart) {
+            entry.el.currentTime = 0;
+            entry.done = false;
+          }
+          // Switching a finished one-shot to looping starts it again.
+          if (entry.loop) entry.done = false;
+          apply(entry);
+        } else {
+          needs.push(key);
+        }
+      }
+      return needs;
+    },
+
+    load(key, mime, data) {
+      const entry = entries.get(key);
+      if (!entry || entry.el) return false;
+      const graph = window.__trussalMasterPlayer && window.__trussalMasterPlayer.graph();
+      if (!graph) {
+        noteError(`load ${entry.name}`, 'the master player has no audio graph');
+        return false;
+      }
+      try {
+        const binary = atob(String(data || ''));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const el = document.createElement(entry.kind === 'video' ? 'video' : 'audio');
+        entry.url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        el.src = entry.url;
+        el.preload = 'auto';
+        el.playsInline = true;
+        el.loop = entry.loop;
+        el.addEventListener('ended', () => { if (!el.loop) entry.done = true; });
+        el.addEventListener('error', () => noteError(`decode ${entry.name}`, el.error && el.error.message));
+        ensureStage().appendChild(el);
+        // Routed into the master bus only: a media element source no longer
+        // reaches the speakers on its own, so this is the one path out.
+        entry.node = graph.ctx.createMediaElementSource(el);
+        entry.node.connect(graph.input);
+        entry.el = el;
+        apply(entry);
+        return true;
+      } catch (e) {
+        noteError(`load ${entry.name}`, e);
+        return false;
+      }
+    },
+
+    // Whose turn it is, as Node assembles it. The master player is still
+    // holding its cushion of assembled audio when Node moves on, so the turn
+    // the room HEARS changes that much later — turn-only backings follow the
+    // heard turn, not the assembled one.
+    setActive(token) {
+      const player = window.__trussalMasterPlayer;
+      const graph = player && player.graph();
+      const queued = player ? player.queued() : 0;
+      const delayMs = graph ? (queued / (graph.ctx.sampleRate * 2)) * 1000 : 0;
+      clearTimeout(gateTimer);
+      gateTimer = setTimeout(() => {
+        activeToken = token;
+        for (const entry of entries.values()) apply(entry);
+      }, delayMs);
+    },
+
+    // Video backings showing a picture right now, oldest declaration first.
+    videos() {
+      const out = [];
+      for (const entry of entries.values()) {
+        const el = entry.el;
+        if (entry.kind === 'video' && el && !el.paused && el.readyState >= 2) out.push(el);
+      }
+      return out;
+    },
+
+    diag() {
+      return {
+        activeToken,
+        entries: [...entries.entries()].map(([key, e]) => ({
+          key, name: e.name, kind: e.kind, loop: e.loop, turnOnly: e.turnOnly, loaded: !!e.el,
+          playing: !!(e.el && !e.el.paused), done: e.done, at: e.el ? e.el.currentTime : 0,
+        })),
+        errors: errors.slice(),
+      };
+    },
+  };
+}
+
+/** Push the room's backing declarations; returns the keys needing load(). */
+export function pageSetBacking(list) {
+  const b = window.__trussalBacking;
+  return b ? b.set(list) : [];
+}
+
+/** Hand the page one backing file's bytes (base64). */
+export function pageLoadBacking(key, mime, data) {
+  const b = window.__trussalBacking;
+  return b ? b.load(key, mime, data) : false;
+}
+
+/** Tell the backing voices whose turn it is (null = a rest). */
+export function pageSetBackingActive(token) {
+  const b = window.__trussalBacking;
+  if (!b) return false;
+  b.setActive(token);
+  return true;
 }
 
 /**
@@ -3128,10 +3339,29 @@ export function pageMosaic(options = {}) {
 
   // Draw whichever cells are lit into `target`, which is either the published
   // canvas (no effects) or the scene buffer (effects).
+  // Backing videos (pageBacking) fill the frame beneath the cells, cropped
+  // to cover it, so a streaming cell still sits on top of them.
+  function drawBacking(c) {
+    const backing = window.__trussalBacking;
+    if (!backing) return;
+    for (const v of backing.videos()) {
+      const vw = v.videoWidth, vh = v.videoHeight;
+      if (!vw || !vh) continue;
+      const scale = Math.max(width / vw, height / vh);
+      const w = vw * scale, h = vh * scale;
+      try {
+        c.drawImage(v, (width - w) / 2, (height - h) / 2, w, h);
+      } catch (e) {
+        noteError('draw backing', e);
+      }
+    }
+  }
+
   function drawScene(target) {
     const c = target.getContext('2d');
     c.fillStyle = '#000';
     c.fillRect(0, 0, width, height);
+    drawBacking(c);
     if (!enabled) {
       // `# mosaic false`: whoever is streaming, full frame. Nothing else.
       if (activeToken != null) drawCell(activeToken, { x: 0, y: 0, w: width, h: height }, c);
@@ -3379,865 +3609,1254 @@ export function pageMosaic(options = {}) {
   };
 
   setInterval(() => window.__trussalMosaic.retryAttachments(), 1000);
-}
 
-// --- the output stage ---------------------------------------------------------
-//
-// The `#` chain's shape layer: what the composed mosaic BECOMES. The stage
-// sits between drawScene and the effects chain — frame() draws the scene into
-// a texture buffer, the stage composes background → three.js layers → p5
-// layers onto a canvas, and crush/blur/grain/echo then read that result — so
-// the stage is ground and form, and the existing effects are the glaze over
-// it, in the same painter's order they already had over the plain mosaic.
-//
-// Everything is lazy and self-healing:
-//   • the stage object is only created by setOutput, so a program with no
-//     shape directive allocates no canvases, no libraries, no contexts;
-//   • three.js (an ES module) evaluates from a blob URL and p5.js (UMD) from
-//     a script tag, only once the bot has handed over the vendored source
-//     AND a directive asks for them — until both land, active() is false and
-//     frame() falls through to the untouched mosaic;
-//   • every render is wrapped: a failing context logs to diag and the frame
-//     stays up rather than wedging the compositor.
-//
-// Composition model mirrors OutputState.js: ONE shape at a time (last wins),
-// with skybox / particle2 / particle3 / tessellation / tiling / background
-// stacking freely as layers. Spin params are turns per CYCLE — read from
-// cyclePos(), so the picture moves with the grid rather than with the clock.
-function createOutputStage({ container, width, height, noteError, cyclePos }) {
-  const TAU = Math.PI * 2;
-  const ASPECT = width / Math.max(1, height);
-  // FOV 50°: half-height at distance d is tan(25°)·d. The fit below walks a
-  // composition's half-extent through this to park the camera in front of it.
-  const TAN_HALF = Math.tan((50 / 2) * (Math.PI / 180));
+  // --- the output stage -------------------------------------------------------
+  //
+  // The `#` chain's shape layer: what the composed mosaic BECOMES. The stage
+  // sits between drawScene and the effects chain — frame() draws the scene into
+  // a texture buffer, the stage composes background → three.js layers → p5
+  // layers onto a canvas, and crush/blur/grain/echo then read that result — so
+  // the stage is ground and form, and the existing effects are the glaze over
+  // it, in the same painter's order they already had over the plain mosaic.
+  //
+  // Everything is lazy and self-healing:
+  //   • the stage object is only created by setOutput, so a program with no
+  //     shape directive allocates no canvases, no libraries, no contexts;
+  //   • three.js (an ES module) evaluates from a blob URL and p5.js (UMD) from
+  //     a script tag, only once the bot has handed over the vendored source
+  //     AND a directive asks for them — until both land, active() is false and
+  //     frame() falls through to the untouched mosaic;
+  //   • every render is wrapped: a failing context logs to diag and the frame
+  //     stays up rather than wedging the compositor.
+  //
+  // Composition model mirrors OutputState.js: ONE shape at a time (last wins),
+  // with skybox / particle2 / particle3 / tessellation / tiling / background
+  // stacking freely as layers. Spin params are turns per CYCLE — read from
+  // cyclePos(), so the picture moves with the grid rather than with the clock.
+  //
+  // Nested in pageMosaic, not beside it: evaluateOnNewDocument ships only
+  // pageMosaic's own source, so a module-scope helper is a ReferenceError in
+  // the page (setOutput swallows it into diag) while node:test, which calls
+  // pageMosaic directly, still sees it.
+  function createOutputStage({ container, width, height, noteError, cyclePos }) {
+    const TAU = Math.PI * 2;
+    const DEG = Math.PI / 180;
+    const ASPECT = width / Math.max(1, height);
+    // The lens's half-height at unit distance — tan(fov/2), 50° unless
+    // `# camera3d` says otherwise. The fits below walk a composition's
+    // half-extent through it to park the camera in front of it.
+    const tanHalf = (fov) => Math.tan((fov / 2) * DEG);
+    // The honeycomb is drawn as one InstancedMesh; past this many copies a
+    // zoomed-out or tumbling view shows the lattice's edge rather than
+    // multiplying vertices software GL cannot keep up with.
+    const MAX_INSTANCES = 400;
 
-  let state = null;
+    let state = null;
 
-  // Libraries. `three` is the built scene bundle (renderer/scene/camera),
-  // separate from window.THREE (the module itself) because the bundle is only
-  // worth building once a directive actually renders. Failed loads are sticky:
-  // retrying a context that could not come up would burn WebGL contexts.
-  let threeLoading = null, threeFailed = false;
-  let p5Loading = null, p5Failed = false;
-  let three = null;
-  let p5Inst = null, p5Canvas = null, p5Frame = null;
+    // Libraries. `three` is the built scene bundle (renderer/scene/camera),
+    // separate from window.THREE (the module itself) because the bundle is only
+    // worth building once a directive actually renders. Failed loads are sticky:
+    // retrying a context that could not come up would burn WebGL contexts.
+    let threeLoading = null, threeFailed = false;
+    let p5Loading = null, p5Failed = false;
+    let three = null;
+    let p5Inst = null, p5Canvas = null, p5Frame = null;
 
-  // One downscaled readback of the scene per frame, shared by both particle
-  // systems — 192×108 pixels instead of 921k, which is what makes sampling
-  // the video's own colors per particle affordable under software GL.
-  const TINY_W = 192, TINY_H = 108;
-  let tiny = null, tinyData = null;
+    // One downscaled readback of the scene per frame, shared by both particle
+    // systems — 192×108 pixels instead of 921k, which is what makes sampling
+    // the video's own colors per particle affordable under software GL.
+    const TINY_W = 192, TINY_H = 108;
+    let tiny = null, tinyData = null;
 
-  // The `# background` image, loaded once per URL.
-  let bgImage = null, bgWanted = null;
+    // The `# background` image, loaded once per URL.
+    let bgImage = null, bgWanted = null;
 
-  // particle2's base field — positions are fixed; only their drift and their
-  // sampled colors move each frame.
-  let p2Sig = '', p2Base = null, p2Phase = null;
+    // particle2's base field — positions are fixed; only their drift and their
+    // sampled colors move each frame.
+    let p2Sig = '', p2Base = null, p2Phase = null;
 
-  // A positive parameter, or the default — the parser only ever produces
-  // positive reals, and `~` arrives as null, which lands here too.
-  const n = (v, d) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : d);
-  // A finite parameter including zero (spins may legitimately be silenced),
-  // else zero.
-  const slot = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
-  // A rounded parameter clamped into a band (segment counts, sides…).
-  const ip = (v, d, lo, hi) => {
-    const x = typeof v === 'number' && isFinite(v) ? Math.round(v) : d;
-    return Math.min(hi, Math.max(lo, x));
-  };
-  const i1 = (v, d = 1) => (typeof v === 'number' && isFinite(v) ? Math.round(v) : d);
+    // One cell's worth of frame for a 2D tessellation, stamped into every cell.
+    let cellBuf = null;
 
-  // Whether there is anything at all for the stage to draw. Background alone
-  // does not count: with no shape the frame IS the video, so there is nothing
-  // for a backdrop to sit behind (and OutputState gates the push the same
-  // way).
-  function drawable() {
-    return !!(state && (state.shape || state.skybox || state.particle2
-      || state.particle3 || state.tessellation));
-  }
+    // A positive parameter, or the default — the parser only ever produces
+    // positive reals, and `~` arrives as null, which lands here too.
+    const n = (v, d) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : d);
+    // A finite parameter including zero (spins may legitimately be silenced),
+    // else zero.
+    const slot = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+    // A rate that may be zero (OutputState clamps particle speed to [0, 8], and
+    // 0 is a still cloud), else the default.
+    const rate = (v, d) => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : d);
+    // A rounded parameter clamped into a band (segment counts, sides…).
+    const ip = (v, d, lo, hi) => {
+      const x = typeof v === 'number' && isFinite(v) ? Math.round(v) : d;
+      return Math.min(hi, Math.max(lo, x));
+    };
+    const i1 = (v, d = 1) => (typeof v === 'number' && isFinite(v) ? Math.round(v) : d);
 
-  // Which libraries the current state needs — the same table OutputState's
-  // outputStageLibraries computes Node-side, kept here so the page (and diag)
-  // can judge readiness without a round trip.
-  function libNeeds() {
-    const need = { three: false, p5: false };
-    if (!state) return need;
-    const fam = state.shape ? state.shape.family : null;
-    need.three = !!(state.skybox || state.particle3 || fam === 'three');
-    need.p5 = !!(state.particle2 || state.tessellation || fam === 'p5');
-    return need;
-  }
-
-  // What the current state needs that the page has not been GIVEN yet. The
-  // bot answers this with source text, so a shape directive works even if its
-  // first push raced ahead of the install — and a program that never asks for
-  // a shape never ships 1.7MB of vendor code into the page.
-  function vendorNeeds() {
-    if (!drawable()) return [];
-    const need = libNeeds();
-    const vendor = window.__trussalVendor || {};
-    const want = [];
-    if (need.three && !vendor.three) want.push('three');
-    if (need.p5 && !vendor.p5) want.push('p5');
-    return want;
-  }
-
-  // Kick off evaluation of whichever vendored source is present but uneval'd.
-  // Called from setState and from every active() — the second path is what
-  // self-heals when the bot's install lands AFTER the state push.
-  function ensureLoaders() {
-    const need = libNeeds();
-    const vendor = window.__trussalVendor || {};
-    if (need.three && vendor.three && !window.THREE && !threeLoading && !threeFailed) {
-      startThree(vendor.three);
+    // Whether there is anything at all for the stage to draw. Background alone
+    // does not count: with no shape the frame IS the video, so there is nothing
+    // for a backdrop to sit behind (and OutputState gates the push the same
+    // way).
+    function drawable() {
+      return !!(state && (state.shape || state.skybox || state.particle2
+        || state.particle3 || state.tessellation));
     }
-    if (need.p5 && vendor.p5 && !window.p5 && !p5Loading && !p5Failed) {
-      startP5(vendor.p5);
-    }
-  }
 
-  // three.module.min.js is an ES module, and a `<script>` cannot run one —
-  // so it goes up as a blob URL and in through dynamic import, the same door
-  // hydra-synth comes through.
-  function startThree(src) {
-    let url;
-    try {
-      url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
-    } catch (e) {
-      threeFailed = true;
-      noteError('three stage', e);
-      return null;
+    // Which libraries the current state needs — the same table OutputState's
+    // outputStageLibraries computes Node-side, kept here so the page (and diag)
+    // can judge readiness without a round trip.
+    function libNeeds() {
+      const need = { three: false, p5: false };
+      if (!state) return need;
+      const fam = state.shape ? state.shape.family : null;
+      need.three = !!(state.skybox || state.particle3 || fam === 'three');
+      // A 3D shape's tessellation is its three.js honeycomb; only a 2D shape's
+      // (or the shapeless quilt) is drawn in p5.
+      need.p5 = !!(state.particle2 || (state.tessellation && fam !== 'three') || fam === 'p5');
+      return need;
     }
-    threeLoading = import(/* webpackIgnore: true */ url)
-      .then((mod) => {
-        if (!mod || !mod.WebGLRenderer) throw new Error('three vendor evaluated without a renderer');
-        window.THREE = mod;
-      })
-      .catch((e) => {
-        threeFailed = true;
-        noteError('three load', e);
-      })
-      .then(() => {
-        threeLoading = null;
-        try { URL.revokeObjectURL(url); } catch (e) { /* already gone */ }
-      });
-    return threeLoading;
-  }
 
-  // p5.min.js is UMD — a plain script tag is the whole install.
-  function startP5(src) {
-    p5Loading = new Promise((resolve, reject) => {
+    // What the current state needs that the page has not been GIVEN yet. The
+    // bot answers this with source text, so a shape directive works even if its
+    // first push raced ahead of the install — and a program that never asks for
+    // a shape never ships 1.7MB of vendor code into the page.
+    function vendorNeeds() {
+      if (!drawable()) return [];
+      const need = libNeeds();
+      const vendor = window.__trussalVendor || {};
+      const want = [];
+      if (need.three && !vendor.three) want.push('three');
+      if (need.p5 && !vendor.p5) want.push('p5');
+      return want;
+    }
+
+    // Kick off evaluation of whichever vendored source is present but uneval'd.
+    // Called from setState and from every active() — the second path is what
+    // self-heals when the bot's install lands AFTER the state push.
+    function ensureLoaders() {
+      const need = libNeeds();
+      const vendor = window.__trussalVendor || {};
+      if (need.three && vendor.three && !window.THREE && !threeLoading && !threeFailed) {
+        startThree(vendor.three);
+      }
+      if (need.p5 && vendor.p5 && !window.p5 && !p5Loading && !p5Failed) {
+        startP5(vendor.p5);
+      }
+    }
+
+    // three.module.min.js is an ES module, and a `<script>` cannot run one —
+    // so it goes up as a blob URL and in through dynamic import, the same door
+    // hydra-synth comes through.
+    function startThree(src) {
+      let url;
       try {
-        const el = document.createElement('script');
-        el.textContent = src;
-        el.onload = () => (window.p5 ? resolve() : reject(new Error('p5 vendor evaluated without exposing p5')));
-        el.onerror = () => reject(new Error('p5 vendor failed to evaluate'));
-        (document.head || document.documentElement).appendChild(el);
+        url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
       } catch (e) {
-        reject(e);
+        threeFailed = true;
+        noteError('three stage', e);
+        return null;
       }
-    })
-      .catch((e) => {
-        p5Failed = true;
-        noteError('p5 load', e);
+      threeLoading = import(/* webpackIgnore: true */ url)
+        .then((mod) => {
+          if (!mod || !mod.WebGLRenderer) throw new Error('three vendor evaluated without a renderer');
+          window.THREE = mod;
+        })
+        .catch((e) => {
+          threeFailed = true;
+          noteError('three load', e);
+        })
+        .then(() => {
+          threeLoading = null;
+          try { URL.revokeObjectURL(url); } catch (e) { /* already gone */ }
+        });
+      return threeLoading;
+    }
+
+    // p5.min.js is UMD — a plain script tag is the whole install.
+    function startP5(src) {
+      p5Loading = new Promise((resolve, reject) => {
+        try {
+          const el = document.createElement('script');
+          el.textContent = src;
+          el.onload = () => (window.p5 ? resolve() : reject(new Error('p5 vendor evaluated without exposing p5')));
+          el.onerror = () => reject(new Error('p5 vendor failed to evaluate'));
+          (document.head || document.documentElement).appendChild(el);
+        } catch (e) {
+          reject(e);
+        }
       })
-      .then(() => { p5Loading = null; });
-    return p5Loading;
-  }
-
-  // The gate frame() reads. False until everything the state asks for is
-  // actually up — a directive arriving before its library lands shows the
-  // plain mosaic for the frames in between, never a half-composed one.
-  function active() {
-    if (!drawable()) return false;
-    const need = libNeeds();
-    if (need.three) {
-      if (!window.THREE) { ensureLoaders(); return false; }
-      if (!three && !makeThree()) return false;
+        .catch((e) => {
+          p5Failed = true;
+          noteError('p5 load', e);
+        })
+        .then(() => { p5Loading = null; });
+      return p5Loading;
     }
-    if (need.p5) {
-      if (!window.p5) { ensureLoaders(); return false; }
-      if (!p5Inst && !makeP5()) return false;
-    }
-    return true;
-  }
 
-  function setState(next) {
-    state = next || null;
-    ensureLoaders();
-  }
-
-  // --- three.js ----------------------------------------------------------------
-
-  function makeThree() {
-    const T = window.THREE;
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.className = 'trussal-output-three';
-      container.appendChild(canvas);
-      const renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: false, preserveDrawingBuffer: true });
-      renderer.setPixelRatio(1);
-      renderer.setSize(width, height, false);
-      // Transparent clear: the 2D background layer painted underneath shows
-      // around whatever the scene draws on top of it.
-      renderer.setClearColor(0x000000, 0);
-      const scene = new T.Scene();
-      const camera = new T.PerspectiveCamera(50, ASPECT, 0.05, 600);
-      const root = new T.Group();
-      scene.add(root);
-      three = { T, canvas, renderer, scene, camera, root, tex: null, skyTex: null, sky: null, meshes: [], points: null, geo: null, mat: null, boundR: 1, shapeSig: '', pointsSig: '' };
+    // The gate frame() reads. False until everything the state asks for is
+    // actually up — a directive arriving before its library lands shows the
+    // plain mosaic for the frames in between, never a half-composed one.
+    function active() {
+      if (!drawable()) return false;
+      const need = libNeeds();
+      if (need.three) {
+        if (!window.THREE) { ensureLoaders(); return false; }
+        if (!three && !makeThree()) return false;
+      }
+      if (need.p5) {
+        if (!window.p5) { ensureLoaders(); return false; }
+        if (!p5Inst && !makeP5()) return false;
+      }
       return true;
-    } catch (e) {
-      threeFailed = true;
-      three = null;
-      noteError('three stage', e);
-      return false;
     }
-  }
 
-  // Shape-specific geometry, parameter-by-parameter straight from
-  // THREE_SHAPES in the parser — a null slot (or an absent group) falls back
-  // to three.js's own default, which is also what the docs quote.
-  function makeGeometry(T, name, g) {
-    const gr = g || [];
-    const num = (i, d) => n(gr[i], d);
-    const seg = (i, d) => ip(gr[i], d, 3, 128);
-    switch (name) {
-      case 'tetrahedron': return new T.TetrahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
-      case 'box': return new T.BoxGeometry(num(0, 1), num(1, 1), num(2, 1));
-      case 'sphere': return new T.SphereGeometry(num(0, 1), seg(1, 32), seg(2, 16));
-      case 'icosahedron': return new T.IcosahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
-      case 'octahedron': return new T.OctahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
-      case 'dodecahedron': return new T.DodecahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
-      case 'torus': return new T.TorusGeometry(num(0, 1), num(1, 0.4), seg(2, 12), seg(3, 48));
-      case 'torusknot': return new T.TorusKnotGeometry(num(0, 1), num(1, 0.4), seg(2, 64), seg(3, 8), ip(gr[4], 2, 1, 32), ip(gr[5], 3, 1, 32));
-      case 'cylinder': return new T.CylinderGeometry(num(0, 1), num(1, 1), num(2, 1), seg(3, 32));
-      case 'cone': return new T.ConeGeometry(num(0, 1), num(1, 1), seg(2, 32));
-      default: return new T.BoxGeometry(num(0, 1), num(1, 1), num(2, 1));
+    function setState(next) {
+      state = next || null;
+      ensureLoaders();
     }
-  }
 
-  function rebuildShape(st) {
-    const T = three.T;
-    for (const m of three.meshes) three.root.remove(m);
-    three.meshes = [];
-    if (three.geo) { three.geo.dispose(); three.geo = null; }
-    if (three.mat) { three.mat.dispose(); three.mat = null; }
-    three.boundR = 1;
-    if (!st) return;
-    const geo = makeGeometry(T, st.name, st.geometry);
-    geo.computeBoundingSphere();
-    three.geo = geo;
-    three.boundR = (geo.boundingSphere && geo.boundingSphere.radius) || 1;
-    // Unlit on purpose: the frame's own colors are the surface — lighting it
-    // would tint the video.
-    const mat = new T.MeshBasicMaterial({ map: three.tex, side: T.DoubleSide });
-    three.mat = mat;
-    const count = cellCount(state.tiling);
-    for (let i = 0; i < count; i++) {
-      const mesh = new T.Mesh(geo, mat);
+    // --- three.js --------------------------------------------------------------
+
+    function makeThree() {
+      const T = window.THREE;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.className = 'trussal-output-three';
+        container.appendChild(canvas);
+        const renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: false, preserveDrawingBuffer: true });
+        renderer.setPixelRatio(1);
+        renderer.setSize(width, height, false);
+        // Transparent clear: the 2D background layer painted underneath shows
+        // around whatever the scene draws on top of it.
+        renderer.setClearColor(0x000000, 0);
+        const scene = new T.Scene();
+        const camera = new T.PerspectiveCamera(50, ASPECT, 0.05, 600);
+        const root = new T.Group();
+        scene.add(root);
+        // The particle3 cloud rides this pivot, which follows one copy of the
+        // shape — its position, spin and scale — so the cloud hugs that copy.
+        const pivot = new T.Group();
+        root.add(pivot);
+        // Scratch objects for the per-frame transforms: allocated once, since
+        // a honeycomb composes hundreds of matrices every frame.
+        const scratch = {
+          m: new T.Matrix4(), q: new T.Quaternion(), tq: new T.Quaternion(), e: new T.Euler(),
+          p: new T.Vector3(), s: new T.Vector3(), off: new T.Vector3(), up: new T.Vector3(),
+          axis: new T.Vector3(), target: new T.Vector3(),
+        };
+        three = {
+          T, canvas, renderer, scene, camera, root, pivot, scratch,
+          tex: null, skyTex: null, sky: null, mesh: null, points: null, geo: null, mat: null,
+          lights: [], lightSig: '', boundR: 1, shapeSig: '', pointsSig: '',
+        };
+        return true;
+      } catch (e) {
+        threeFailed = true;
+        three = null;
+        noteError('three stage', e);
+        return false;
+      }
+    }
+
+    // Shape-specific geometry, parameter-by-parameter straight from
+    // THREE_SHAPES in the parser — a null slot (or an absent group) falls back
+    // to three.js's own default, which is also what the docs quote.
+    function makeGeometry(T, name, g) {
+      const gr = g || [];
+      const num = (i, d) => n(gr[i], d);
+      const seg = (i, d) => ip(gr[i], d, 3, 128);
+      switch (name) {
+        case 'tetrahedron': return new T.TetrahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
+        case 'box': return new T.BoxGeometry(num(0, 1), num(1, 1), num(2, 1));
+        case 'sphere': return new T.SphereGeometry(num(0, 1), seg(1, 32), seg(2, 16));
+        case 'icosahedron': return new T.IcosahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
+        case 'octahedron': return new T.OctahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
+        case 'dodecahedron': return new T.DodecahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
+        case 'torus': return new T.TorusGeometry(num(0, 1), num(1, 0.4), seg(2, 12), seg(3, 48));
+        case 'torusknot': return new T.TorusKnotGeometry(num(0, 1), num(1, 0.4), seg(2, 64), seg(3, 8), ip(gr[4], 2, 1, 32), ip(gr[5], 3, 1, 32));
+        case 'cylinder': return new T.CylinderGeometry(num(0, 1), num(1, 1), num(2, 1), seg(3, 32));
+        case 'cone': return new T.ConeGeometry(num(0, 1), num(1, 1), seg(2, 32));
+        default: return new T.BoxGeometry(num(0, 1), num(1, 1), num(2, 1));
+      }
+    }
+
+    // Every copy of the shape — one, a tiling's N, a honeycomb's hundreds — is
+    // an instance of ONE InstancedMesh: one draw call however many there are,
+    // each instance carrying its own position and spin. Allocated at the cap
+    // so the copy count can follow the camera without a rebuild.
+    function rebuildShape(st, lit) {
+      const T = three.T;
+      if (three.mesh) { three.root.remove(three.mesh); three.mesh.dispose(); three.mesh = null; }
+      if (three.geo) { three.geo.dispose(); three.geo = null; }
+      if (three.mat) { three.mat.dispose(); three.mat = null; }
+      three.boundR = 1;
+      if (!st) return;
+      const geo = makeGeometry(T, st.name, st.geometry);
+      geo.computeBoundingSphere();
+      three.geo = geo;
+      three.boundR = (geo.boundingSphere && geo.boundingSphere.radius) || 1;
+      // Unlit unless `# lighting3d` asks: the frame's own colors are the
+      // surface, and lighting them tints the video — which is the point once
+      // someone writes a light, and only then.
+      const mat = lit
+        ? new T.MeshPhongMaterial({ map: three.tex, side: T.DoubleSide, shininess: 40, specular: 0x222222 })
+        : new T.MeshBasicMaterial({ map: three.tex, side: T.DoubleSide });
+      three.mat = mat;
+      const mesh = new T.InstancedMesh(geo, mat, MAX_INSTANCES);
+      mesh.count = 0;
+      // The matrices move every frame; a bounding sphere computed once would
+      // cull copies that have since moved into view.
+      mesh.frustumCulled = false;
+      if (T.DynamicDrawUsage) mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
       three.root.add(mesh);
-      three.meshes.push(mesh);
+      three.mesh = mesh;
     }
-  }
 
-  function cellCount(tiling) {
-    if (!tiling || tiling.mode === 'none') return 1;
-    return Math.min(12, Math.max(1, Math.round(tiling.count || 1)));
-  }
-
-  // Where the shape's instances sit, in world units. Cells are sized around
-  // the shape's own extent, so a lattice of radius-r shapes is spaced by
-  // ~2.15·r regardless of how big the shapes are — the camera fit below then
-  // frames the lattice, which is what keeps nine copies legible instead of a
-  // distant smear.
-  function layoutCells(tiling, baseR) {
-    const count = cellCount(tiling);
-    if (count === 1 || !tiling || tiling.mode === 'none') return [{ x: 0, y: 0 }];
-    const cols = tiling.mode === 'strip'
-      ? count
-      : Math.max(1, Math.ceil(Math.sqrt(count * ASPECT)));
-    const rows = Math.max(1, Math.ceil(count / cols));
-    const cell = 2.15 * baseR;
-    const hex = tiling.mode === 'hex';
-    const rowStep = hex ? cell * 0.86 : cell;
-    const out = [];
-    for (let i = 0; i < count; i++) {
-      const col = i % cols, row = Math.floor(i / cols);
-      // Hex is the brick reading of the grid: alternate rows half-step
-      // sideways, the pair offset symmetrically about the center so the
-      // lattice does not drift right.
-      const stagger = hex ? (row % 2 ? 0.25 : -0.25) : 0;
-      out.push({
-        x: (col - (cols - 1) / 2 + stagger) * cell,
-        y: (row - (rows - 1) / 2) * rowStep,
-      });
+    function cellCount(tiling) {
+      if (!tiling || tiling.mode === 'none') return 1;
+      return Math.min(12, Math.max(1, Math.round(tiling.count || 1)));
     }
-    return out;
-  }
 
-  // Instance layout plus the camera distance that frames it — recomputed
-  // every frame because the scene's scale parameter moves without a rebuild.
-  function frameFit(st) {
-    const sc = (st && st.scene) || [];
-    const scale = n(sc[0], 1);
-    const baseR = Math.max(0.02, (st ? three.boundR : 1) * scale);
-    const cells = layoutCells(st && st.tiling, baseR);
-    let hw = baseR, hh = baseR;
-    for (const c of cells) {
-      hw = Math.max(hw, Math.abs(c.x) + baseR);
-      hh = Math.max(hh, Math.abs(c.y) + baseR);
-    }
-    const fit = Math.max(hh / TAN_HALF, hw / (TAN_HALF * ASPECT)) * 1.14;
-    return { scale, cells, dist: Math.max(0.6, fit) };
-  }
-
-  function rebuildPoints(st) {
-    const T = three.T;
-    if (three.points) {
-      three.root.remove(three.points);
-      three.points.geometry.dispose();
-      three.points.material.dispose();
-      three.points = null;
-    }
-    const cfg = state.particle3;
-    if (!cfg) return;
-    const count = Math.min(8000, Math.max(16, Math.round(cfg.count)));
-    const posArr = new Float32Array(count * 3);
-    const colArr = new Float32Array(count * 3);
-    const uvArr = new Float32Array(count * 2);
-    colArr.fill(0.8); // visible before the first sample lands
-    // On the shape's surface when there is a three.js shape (its own vertices
-    // and UVs, so the cloud hugs the form and inherits its texture mapping);
-    // a unit shell otherwise.
-    const sp = three.geo && three.geo.attributes && three.geo.attributes.position;
-    const su = three.geo && three.geo.attributes && three.geo.attributes.uv;
-    if (st && sp && sp.count) {
-      for (let i = 0; i < count; i++) {
-        const vi = Math.floor(Math.random() * sp.count);
-        posArr[i * 3] = sp.getX(vi);
-        posArr[i * 3 + 1] = sp.getY(vi);
-        posArr[i * 3 + 2] = sp.getZ(vi);
-        if (su) {
-          uvArr[i * 2] = su.getX(vi);
-          uvArr[i * 2 + 1] = su.getY(vi);
-        } else {
-          uvArr[i * 2] = 0.5;
-          uvArr[i * 2 + 1] = 0.5;
+    // Where the shape's instances sit, in world units. Cells are sized around
+    // the shape's own extent, so a lattice of radius-r shapes is spaced by
+    // ~2.15·r regardless of how big the shapes are — the camera fit below then
+    // frames the lattice, which is what keeps nine copies legible instead of a
+    // distant smear.
+    function layoutCells(tiling, baseR) {
+      const count = cellCount(tiling);
+      if (count === 1 || !tiling || tiling.mode === 'none') return [{ x: 0, y: 0 }];
+      // Columns: between a square lattice and one shaped like the frame, the
+      // count that leaves the fewest empty slots (wider on a tie) — 9 is 3×3
+      // and 6 is 3×2, never a 4+4+1 with one copy stranded in a corner.
+      let cols = count;
+      if (tiling.mode !== 'strip') {
+        const lo = Math.ceil(Math.sqrt(count));
+        const hi = Math.max(lo, Math.ceil(Math.sqrt(count * ASPECT)));
+        let emptiest = Infinity;
+        for (let c = hi; c >= lo; c--) {
+          const empty = Math.ceil(count / c) * c - count;
+          if (empty < emptiest) { emptiest = empty; cols = c; }
         }
       }
-    } else {
-      const ga = Math.PI * (3 - Math.sqrt(5)); // fibonacci sphere: even spread
+      const rows = Math.max(1, Math.ceil(count / cols));
+      const cell = 2.15 * baseR;
+      const hex = tiling.mode === 'hex';
+      const rowStep = hex ? cell * 0.86 : cell;
+      const out = [];
       for (let i = 0; i < count; i++) {
-        const y = count === 1 ? 0 : 1 - (i / (count - 1)) * 2;
-        const rad = Math.sqrt(Math.max(0, 1 - y * y));
-        const th = ga * i;
-        const x = Math.cos(th) * rad, z = Math.sin(th) * rad;
-        posArr[i * 3] = x;
-        posArr[i * 3 + 1] = y;
-        posArr[i * 3 + 2] = z;
-        uvArr[i * 2] = (Math.atan2(z, x) / TAU + 0.5 + 1) % 1;
-        uvArr[i * 2 + 1] = Math.acos(Math.max(-1, Math.min(1, y))) / Math.PI;
+        const col = i % cols, row = Math.floor(i / cols);
+        // A short last row centers on its own count rather than hugging the left.
+        const inRow = row === rows - 1 ? count - row * cols : cols;
+        // Hex is the brick reading of the grid: alternate rows half-step
+        // sideways, the pair offset symmetrically about the center so the
+        // lattice does not drift right.
+        const stagger = hex ? (row % 2 ? 0.25 : -0.25) : 0;
+        out.push({
+          x: (col - (inRow - 1) / 2 + stagger) * cell,
+          y: (row - (rows - 1) / 2) * rowStep,
+        });
+      }
+      return out;
+    }
+
+    // What the camera frames, and the distance that frames it — recomputed
+    // every frame because scale and the lens move without a rebuild. `th` is
+    // the lens's tanHalf.
+    //   one shape / `# tiling` — the cells themselves, fitted whole;
+    //   `# tessellation` with a 3D shape — a honeycomb: the pitch of a
+    //   close-packed lattice and the distance at which at least cols × rows
+    //   of it fill the frame. Its cells are laid afterwards (honeycombCells),
+    //   over whatever the camera actually sees once zoom and controls apply.
+    function shapeLayout(st, th) {
+      const sc = (st && st.scene) || [];
+      const scale = n(sc[0], 1);
+      const r = st ? three.boundR : 1;
+      if (st && state.tessellation) {
+        const ts = state.tessellation;
+        const cols = ip(ts.cols, 4, 1, 16), rows = ip(ts.rows, 3, 1, 12);
+        // Bounding spheres touch at scale 1, so scale reads as how full each
+        // cell is: gaps below 1, overlap above.
+        const pitch = 2 * r;
+        const rowStep = pitch * Math.sqrt(3) / 2;
+        const dist = Math.max((cols * pitch) / (2 * th * ASPECT), (rows * rowStep) / (2 * th));
+        return { honeycomb: true, pitch, rowStep, meshScale: scale, cells: null, dist: Math.max(0.6, dist) };
+      }
+      const baseR = Math.max(0.02, r * scale);
+      const cells = layoutCells(st ? state.tiling : null, baseR);
+      let hw = baseR, hh = baseR;
+      for (const c of cells) {
+        hw = Math.max(hw, Math.abs(c.x) + baseR);
+        hh = Math.max(hh, Math.abs(c.y) + baseR);
+      }
+      const fit = Math.max(hh / th, hw / (th * ASPECT)) * 1.14;
+      return { honeycomb: false, meshScale: scale, cells, dist: Math.max(0.6, fit) };
+    }
+
+    // The honeycomb's cells over the patch of the z=0 plane the camera sees:
+    // odd rows half a pitch over, the lattice anchored at the origin so a
+    // panning camera reveals new cells at its edge rather than dragging the
+    // whole sheet along. Past MAX_INSTANCES the covered patch shrinks, not
+    // the cells.
+    function honeycombCells(lay, view) {
+      const { pitch, rowStep } = lay;
+      let hw = view.halfW + pitch, hh = view.halfH + pitch;
+      const est = (4 * hw * hh) / (pitch * rowStep);
+      if (est > MAX_INSTANCES) {
+        const k = Math.sqrt(MAX_INSTANCES / est);
+        hw *= k;
+        hh *= k;
+      }
+      const cells = [];
+      const r0 = Math.floor((view.cy - hh) / rowStep), r1 = Math.ceil((view.cy + hh) / rowStep);
+      for (let row = r0; row <= r1; row++) {
+        const off = row & 1 ? pitch / 2 : 0;
+        const c0 = Math.floor((view.cx - hw - off) / pitch), c1 = Math.ceil((view.cx + hw - off) / pitch);
+        for (let col = c0; col <= c1; col++) {
+          if (cells.length >= MAX_INSTANCES) return cells;
+          cells.push({ x: col * pitch + off, y: row * rowStep });
+        }
+      }
+      return cells;
+    }
+
+    // Where the camera sits this frame: `# camera3d`'s placement, then
+    // `# controls3d`'s motion on top of it, read off the cycle grid like every
+    // spin. Spherical about the target — azimuth around the vertical, polar
+    // down from overhead — so the defaults (0, 90) are the old straight-on view
+    // down +Z. Returns the pose plus the patch of the z=0 plane in view, which
+    // the honeycomb covers. `near` is the composition's radius toward the
+    // camera — how close a flying camera may come before it is inside it.
+    function cameraPose(baseDist, pos, th, near) {
+      const S = three.scratch;
+      const cam = state.camera3d || {};
+      const ctl = state.controls3d;
+      let az = slot(cam.azimuth);
+      let polar = rate(cam.polar, 90);
+      let dist = baseDist / n(cam.zoom, 1);
+      let tx = 0, ty = 0, tumble = 0, tilt = 0;
+      if (ctl) {
+        const lap = pos * rate(ctl.speed, 0);
+        const amt = rate(ctl.amount, 0);
+        switch (ctl.mode) {
+          // OrbitControls' autoRotate: round the vertical, bobbing over and
+          // under by `amount` degrees once a lap.
+          case 'orbit':
+            az += lap * 360;
+            polar += amt * Math.sin(lap * TAU);
+            break;
+          // TrackballControls: no fixed up — the view tumbles round an axis
+          // tilted `amount` degrees off vertical, rolling as it goes.
+          case 'trackball':
+            tumble = lap * TAU;
+            tilt = amt * DEG;
+            break;
+          // MapControls: pan across the scene in a figure-eight reaching
+          // `amount` of the view's half-extent.
+          case 'map':
+            tx = amt * dist * th * ASPECT * Math.sin(lap * TAU);
+            ty = amt * dist * th * 0.5 * Math.sin(lap * TAU * 2);
+            break;
+          // FlyControls: dive toward the target and back out once a lap,
+          // closing `amount` of the gap to its SURFACE at the deepest point —
+          // a fraction of the distance to the center would fly inside it.
+          case 'fly':
+            if (dist > near) dist = near + (dist - near) * (1 - amt * (0.5 - 0.5 * Math.cos(lap * TAU)));
+            break;
+          default:
+            break;
+        }
+      }
+      polar = Math.min(179, Math.max(1, polar));
+      const p = polar * DEG, a = az * DEG;
+      S.target.set(tx, ty, 0);
+      S.off.set(Math.sin(p) * Math.sin(a), Math.cos(p), Math.sin(p) * Math.cos(a)).multiplyScalar(dist);
+      S.up.set(0, 1, 0);
+      if (tumble) {
+        S.axis.set(Math.sin(tilt), Math.cos(tilt), 0).normalize();
+        S.tq.setFromAxisAngle(S.axis, tumble);
+        S.off.applyQuaternion(S.tq);
+        S.up.applyQuaternion(S.tq);
+      }
+      // A head-on, still camera sees just the frame's own patch; a tilted or
+      // moving one sees the sheet obliquely, so cover well past it.
+      const steep = Math.abs(polar - 90) > 45 || (ctl && ctl.mode === 'trackball');
+      const k = !ctl && Math.abs(polar - 90) < 1 ? 1.1 : (steep ? 3.5 : 2.2);
+      return {
+        dist,
+        target: S.target,
+        offset: S.off,
+        up: S.up,
+        roll: slot(cam.roll),
+        view: { cx: tx, cy: ty, halfW: dist * th * ASPECT * k, halfH: dist * th * k },
+      };
+    }
+
+    // `# lighting3d`'s rig for a mode: each light with its share of the
+    // intensity (`gain`) and, for the ones with a direction, its offset from
+    // the key light's azimuth/polar. Studio is the three-point setup: key, a
+    // softer fill from the other side and lower, a rim from behind.
+    function makeRig(T, L) {
+      const c = new T.Color(L.color || '#ffffff');
+      const amb = (gain) => ({ light: new T.AmbientLight(0xffffff, 1), gain });
+      switch (L.mode) {
+        case 'ambient':
+          return [{ light: new T.AmbientLight(c, 1), gain: 1 }];
+        case 'directional':
+          return [{ light: new T.DirectionalLight(c, 1), gain: 1, dir: { az: 0, polar: 0 } }, amb(0.25)];
+        case 'point':
+          return [{ light: new T.PointLight(c, 1, 0, 0), gain: 1, dir: { az: 0, polar: 0 }, point: true }, amb(0.2)];
+        case 'hemisphere':
+          return [{ light: new T.HemisphereLight(c, 0x1a1a22, 1), gain: 1 }];
+        case 'studio':
+          return [
+            { light: new T.DirectionalLight(c, 1), gain: 1, dir: { az: 0, polar: 0 } },
+            { light: new T.DirectionalLight(0xffffff, 1), gain: 0.4, dir: { az: -90, polar: 30 } },
+            { light: new T.DirectionalLight(0xffffff, 1), gain: 0.7, dir: { az: 180, polar: -10 } },
+            amb(0.12),
+          ];
+        default:
+          return [];
       }
     }
-    const geo = new T.BufferGeometry();
-    geo.setAttribute('position', new T.BufferAttribute(posArr, 3));
-    const colAttr = new T.BufferAttribute(colArr, 3);
-    if (T.DynamicDrawUsage) colAttr.setUsage(T.DynamicDrawUsage);
-    geo.setAttribute('color', colAttr);
-    const mat = new T.PointsMaterial({ size: cfg.size, sizeAttenuation: false, vertexColors: true });
-    const pts = new T.Points(geo, mat);
-    pts.userData.uv = uvArr;
-    three.root.add(pts);
-    three.points = pts;
-  }
 
-  // Recolor the cloud from the scene buffer each frame — sampled through the
-  // particles' UVs, so a sphere shell reads the panorama around it and a
-  // shape-surface cloud reads the video through the shape's own mapping.
-  function updatePoints(pos) {
-    const P = three.points;
-    const cfg = state.particle3;
-    if (!P || !cfg) return;
-    P.material.size = cfg.size;
-    P.rotation.y = pos * n(cfg.speed, 1) * TAU * 0.25;
-    if (!tinyData) return;
-    const uv = P.userData.uv;
-    const arr = P.geometry.attributes.color.array;
-    for (let i = 0; i < uv.length / 2; i++) {
-      const u = uv[i * 2], v = uv[i * 2 + 1];
-      const x = Math.min(TINY_W - 1, Math.max(0, Math.round(u * (TINY_W - 1))));
-      // three's V runs up, the readback's rows run down.
-      const y = Math.min(TINY_H - 1, Math.max(0, Math.round((1 - v) * (TINY_H - 1))));
-      const o = (y * TINY_W + x) * 4;
-      arr[i * 3] = data255(o);
-      arr[i * 3 + 1] = data255(o + 1);
-      arr[i * 3 + 2] = data255(o + 2);
-    }
-    P.geometry.attributes.color.needsUpdate = true;
-  }
-
-  function data255(o) {
-    return (tinyData[o] || 0) / 255;
-  }
-
-  function ensureSky(tex) {
-    const T = three.T;
-    if (state.skybox) {
-      if (!three.skyTex) {
-        three.skyTex = new T.CanvasTexture(tex);
-        three.skyTex.generateMipmaps = false;
-        three.skyTex.minFilter = T.LinearFilter;
-        if (T.SRGBColorSpace) three.skyTex.colorSpace = T.SRGBColorSpace;
+    // Rebuilt only when the mode or color changes; intensity, direction and
+    // spin move every frame. Intensities are in three.js's physical units,
+    // where π is a surface lit square on at its own full color — so
+    // `intensity 1` shows the frame at full brightness where the key hits it.
+    // `reach` is how far out a point light hangs, scaled to the composition.
+    function syncLights(pos, reach) {
+      const L = state.lighting3d;
+      const sig = L ? `${L.mode}|${L.color}` : '';
+      if (sig !== three.lightSig) {
+        three.lightSig = sig;
+        for (const l of three.lights) {
+          three.scene.remove(l.light);
+          if (l.light.dispose) l.light.dispose();
+        }
+        three.lights = L ? makeRig(three.T, L) : [];
+        for (const l of three.lights) three.scene.add(l.light);
       }
-      three.skyTex.image = tex;
-      three.skyTex.needsUpdate = true;
-      if (!three.sky) {
-        const mat = new T.MeshBasicMaterial({ map: three.skyTex, side: T.BackSide, depthWrite: false });
-        const mesh = new T.Mesh(new T.SphereGeometry(200, 48, 24), mat);
-        three.sky = mesh;
-        three.scene.add(mesh);
+      if (!L) return;
+      const base = rate(L.intensity, 1) * Math.PI;
+      const az = slot(L.azimuth) + rate(L.spin, 0) * pos * 360;
+      for (const l of three.lights) {
+        l.light.intensity = base * l.gain;
+        if (!l.dir) continue;
+        const a = (az + l.dir.az) * DEG;
+        const p = Math.min(179, Math.max(1, rate(L.polar, 45) + l.dir.polar)) * DEG;
+        l.light.position.set(Math.sin(p) * Math.sin(a), Math.cos(p), Math.sin(p) * Math.cos(a))
+          .multiplyScalar(l.point ? reach : 10);
       }
-    } else if (three.sky) {
-      three.scene.remove(three.sky);
-      three.sky.geometry.dispose();
-      three.sky.material.dispose();
-      three.sky = null;
-    }
-  }
-
-  function renderThree(tex, pos) {
-    const T = three.T;
-    // The scene buffer as a texture. Mipmaps off: 1280×720 is not power-of-
-    // two and regenerating them every frame under software rasterization
-    // costs more than the minification shimmer they would hide.
-    if (!three.tex) {
-      three.tex = new T.CanvasTexture(tex);
-      three.tex.wrapS = three.tex.wrapT = T.RepeatWrapping;
-      three.tex.generateMipmaps = false;
-      three.tex.minFilter = T.LinearFilter;
-      // Round-trip the frame as sRGB: without this the colorspace math
-      // brightens every frame the stage touches.
-      if (T.SRGBColorSpace) three.tex.colorSpace = T.SRGBColorSpace;
-    }
-    three.tex.image = tex;
-    three.tex.needsUpdate = true;
-    ensureSky(tex);
-
-    // Rebuild only when the shape itself (or its tiling) moves — scene and
-    // animation parameters are per-frame state, not structure.
-    const st = state.shape && state.shape.family === 'three' ? state.shape : null;
-    const shapeSig = st ? JSON.stringify([st.name, st.geometry, state.tiling]) : '';
-    if (shapeSig !== three.shapeSig) {
-      three.shapeSig = shapeSig;
-      rebuildShape(st);
     }
 
-    const fit = frameFit(st);
-    for (let i = 0; i < three.meshes.length; i++) {
-      const m = three.meshes[i], c = fit.cells[i];
-      if (!m || !c) continue;
-      m.position.set(c.x, c.y, 0);
-      m.scale.setScalar(fit.scale);
+    function rebuildPoints(st) {
+      const T = three.T;
+      if (three.points) {
+        three.pivot.remove(three.points);
+        three.points.geometry.dispose();
+        three.points.material.dispose();
+        three.points = null;
+      }
+      const cfg = state.particle3;
+      if (!cfg) return;
+      const count = Math.min(8000, Math.max(16, Math.round(cfg.count)));
+      const posArr = new Float32Array(count * 3);
+      const colArr = new Float32Array(count * 3);
+      const uvArr = new Float32Array(count * 2);
+      colArr.fill(0.8); // visible before the first sample lands
+      // On the shape's surface when there is a three.js shape (its own faces
+      // and UVs, so the cloud hugs the form and inherits its texture mapping);
+      // a unit shell otherwise.
+      const sp = three.geo && three.geo.attributes && three.geo.attributes.position;
+      const su = three.geo && three.geo.attributes && three.geo.attributes.uv;
+      if (st && sp && sp.count >= 3) {
+        // Uniform over the SURFACE, not over the vertex list: a detail-0
+        // icosahedron has 12 distinct corners, and 4000 particles stacked on
+        // them read as 12 dots. A triangle is picked by area, a point inside
+        // it by barycentric weights (UVs interpolated the same way), then
+        // lifted a hair along the face normal so the depth test does not bury
+        // it in the surface it sits on.
+        const idx = three.geo.index;
+        const tris = Math.floor((idx ? idx.count : sp.count) / 3);
+        const corner = (t, k) => (idx ? idx.getX(t * 3 + k) : t * 3 + k);
+        const a = new T.Vector3(), b = new T.Vector3(), c = new T.Vector3();
+        const ab = new T.Vector3(), ac = new T.Vector3();
+        const load = (t) => {
+          a.fromBufferAttribute(sp, corner(t, 0));
+          b.fromBufferAttribute(sp, corner(t, 1));
+          c.fromBufferAttribute(sp, corner(t, 2));
+          return ab.subVectors(b, a).cross(ac.subVectors(c, a)); // length = 2·area
+        };
+        const cum = new Float32Array(tris);
+        let total = 0;
+        for (let t = 0; t < tris; t++) cum[t] = (total += load(t).length());
+        const lift = 0.01 * three.boundR;
+        for (let i = 0; i < count; i++) {
+          const r = Math.random() * total;
+          let lo = 0, hi = tris - 1;
+          while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (cum[mid] < r) lo = mid + 1; else hi = mid;
+          }
+          const nrm = load(lo).normalize();
+          let u = Math.random(), v = Math.random();
+          if (u + v > 1) { u = 1 - u; v = 1 - v; }
+          const w = 1 - u - v;
+          posArr[i * 3] = a.x * w + b.x * u + c.x * v + nrm.x * lift;
+          posArr[i * 3 + 1] = a.y * w + b.y * u + c.y * v + nrm.y * lift;
+          posArr[i * 3 + 2] = a.z * w + b.z * u + c.z * v + nrm.z * lift;
+          if (su) {
+            const j0 = corner(lo, 0), j1 = corner(lo, 1), j2 = corner(lo, 2);
+            uvArr[i * 2] = su.getX(j0) * w + su.getX(j1) * u + su.getX(j2) * v;
+            uvArr[i * 2 + 1] = su.getY(j0) * w + su.getY(j1) * u + su.getY(j2) * v;
+          } else {
+            uvArr[i * 2] = 0.5;
+            uvArr[i * 2 + 1] = 0.5;
+          }
+        }
+      } else {
+        const ga = Math.PI * (3 - Math.sqrt(5)); // fibonacci sphere: even spread
+        for (let i = 0; i < count; i++) {
+          const y = count === 1 ? 0 : 1 - (i / (count - 1)) * 2;
+          const rad = Math.sqrt(Math.max(0, 1 - y * y));
+          const th = ga * i;
+          const x = Math.cos(th) * rad, z = Math.sin(th) * rad;
+          posArr[i * 3] = x;
+          posArr[i * 3 + 1] = y;
+          posArr[i * 3 + 2] = z;
+          uvArr[i * 2] = (Math.atan2(z, x) / TAU + 0.5 + 1) % 1;
+          uvArr[i * 2 + 1] = Math.acos(Math.max(-1, Math.min(1, y))) / Math.PI;
+        }
+      }
+      const geo = new T.BufferGeometry();
+      geo.setAttribute('position', new T.BufferAttribute(posArr, 3));
+      const colAttr = new T.BufferAttribute(colArr, 3);
+      if (T.DynamicDrawUsage) colAttr.setUsage(T.DynamicDrawUsage);
+      geo.setAttribute('color', colAttr);
+      const mat = new T.PointsMaterial({ size: cfg.size, sizeAttenuation: false, vertexColors: true });
+      const pts = new T.Points(geo, mat);
+      pts.userData.uv = uvArr;
+      three.pivot.add(pts);
+      three.points = pts;
     }
-    if (st) {
-      const sc = st.scene || [];
-      three.tex.repeat.set(n(sc[2], 1), n(sc[3], 1));
-      // Spin: turns per cycle on each axis. An absent animation group keeps
-      // the default turn; a written one silences the slots it rests (`~`),
-      // so `[0 ~ ~]` parks X and Z and leaves Y.
-      const a = spinOf(st.animation, [0, 0.5, 0]);
-      three.root.rotation.set(slot(a[0]) * pos * TAU, slot(a[1]) * pos * TAU, slot(a[2]) * pos * TAU);
+
+    // Recolor the cloud from the scene buffer each frame — sampled through the
+    // particles' UVs, so a sphere shell reads the panorama around it and a
+    // shape-surface cloud reads the video through the shape's own mapping.
+    function updatePoints(pos) {
+      const P = three.points;
+      const cfg = state.particle3;
+      if (!P || !cfg) return;
+      P.material.size = cfg.size;
+      P.rotation.y = pos * rate(cfg.speed, 1) * TAU * 0.25;
+      if (!tinyData) return;
+      const uv = P.userData.uv;
+      const arr = P.geometry.attributes.color.array;
+      for (let i = 0; i < uv.length / 2; i++) {
+        const u = uv[i * 2], v = uv[i * 2 + 1];
+        const x = Math.min(TINY_W - 1, Math.max(0, Math.round(u * (TINY_W - 1))));
+        // three's V runs up, the readback's rows run down.
+        const y = Math.min(TINY_H - 1, Math.max(0, Math.round((1 - v) * (TINY_H - 1))));
+        const o = (y * TINY_W + x) * 4;
+        arr[i * 3] = data255(o);
+        arr[i * 3 + 1] = data255(o + 1);
+        arr[i * 3 + 2] = data255(o + 2);
+      }
+      P.geometry.attributes.color.needsUpdate = true;
+    }
+
+    function data255(o) {
+      return (tinyData[o] || 0) / 255;
+    }
+
+    function ensureSky(tex) {
+      const T = three.T;
+      if (state.skybox) {
+        if (!three.skyTex) {
+          three.skyTex = new T.CanvasTexture(tex);
+          three.skyTex.generateMipmaps = false;
+          three.skyTex.minFilter = T.LinearFilter;
+          if (T.SRGBColorSpace) three.skyTex.colorSpace = T.SRGBColorSpace;
+        }
+        three.skyTex.image = tex;
+        three.skyTex.needsUpdate = true;
+        if (!three.sky) {
+          const mat = new T.MeshBasicMaterial({ map: three.skyTex, side: T.BackSide, depthWrite: false });
+          const mesh = new T.Mesh(new T.SphereGeometry(200, 48, 24), mat);
+          three.sky = mesh;
+          three.scene.add(mesh);
+        }
+      } else if (three.sky) {
+        three.scene.remove(three.sky);
+        three.sky.geometry.dispose();
+        three.sky.material.dispose();
+        three.sky = null;
+      }
+    }
+
+    function renderThree(tex, pos) {
+      const T = three.T;
+      // The scene buffer as a texture. Mipmaps off: 1280×720 is not power-of-
+      // two and regenerating them every frame under software rasterization
+      // costs more than the minification shimmer they would hide.
+      if (!three.tex) {
+        three.tex = new T.CanvasTexture(tex);
+        three.tex.wrapS = three.tex.wrapT = T.RepeatWrapping;
+        three.tex.generateMipmaps = false;
+        three.tex.minFilter = T.LinearFilter;
+        // Round-trip the frame as sRGB: without this the colorspace math
+        // brightens every frame the stage touches.
+        if (T.SRGBColorSpace) three.tex.colorSpace = T.SRGBColorSpace;
+      }
+      three.tex.image = tex;
+      three.tex.needsUpdate = true;
+      ensureSky(tex);
+
+      // Rebuild only when the shape itself (or lit vs unlit) changes — layout,
+      // scene, animation and camera are per-frame state, not structure.
+      const S = three.scratch;
+      const st = state.shape && state.shape.family === 'three' ? state.shape : null;
+      const lit = !!state.lighting3d;
+      const shapeSig = st ? JSON.stringify([st.name, st.geometry, lit]) : '';
+      if (shapeSig !== three.shapeSig) {
+        three.shapeSig = shapeSig;
+        rebuildShape(st, lit);
+      }
+
+      // The lens first: the fits below frame the composition through it.
+      const fov = n((state.camera3d || {}).fov, 50);
+      if (three.camera.fov !== fov) {
+        three.camera.fov = fov;
+        three.camera.updateProjectionMatrix();
+      }
+      const th = tanHalf(fov);
+      const lay = shapeLayout(st, th);
+      const sc = (st && st.scene) || [];
       const d = n(sc[1], NaN);
-      three.camera.position.set(0, 0, isFinite(d) ? d : fit.dist);
-    } else {
-      three.root.rotation.set(0, 0, 0);
-      three.camera.position.set(0, 0, fit.dist);
-    }
-    three.camera.lookAt(0, 0, 0);
+      const pose = cameraPose(isFinite(d) ? d : lay.dist, pos, th, (st ? three.boundR : 1) * lay.meshScale);
+      const cells = lay.honeycomb ? honeycombCells(lay, pose.view) : lay.cells;
 
-    const pointsSig = state.particle3
-      ? JSON.stringify([state.particle3.count, st ? st.name : null, st ? st.geometry : null])
-      : '';
-    if (pointsSig !== three.pointsSig) {
-      three.pointsSig = pointsSig;
-      rebuildPoints(st);
-    }
-    if (three.points) three.points.scale.setScalar(fit.scale);
-    updatePoints(pos);
-
-    three.renderer.render(three.scene, three.camera);
-  }
-
-  // --- p5.js -------------------------------------------------------------------
-
-  function makeP5() {
-    try {
-      p5Inst = new window.p5((p) => {
-        p.setup = () => {
-          const r = p.createCanvas(width, height);
-          p5Canvas = (r && (r.elt || r.canvas)) || p5Canvas || container.querySelector('canvas');
-          p.noLoop();
-        };
-        p.draw = () => {
-          if (p5Frame) drawP5(p.drawingContext, p5Frame);
-        };
-      }, container);
-      if (!p5Canvas) p5Canvas = container.querySelector('canvas');
-      return true;
-    } catch (e) {
-      p5Failed = true;
-      p5Inst = null;
-      noteError('p5 stage', e);
-      return false;
-    }
-  }
-
-  function spinOf(group, dflt) {
-    if (!group || group.length === 0) return dflt;
-    return group.map(slot);
-  }
-
-  // The 2D shape's path, centered on the current transform, returning its
-  // half-extent so the caller knows how far the video fill must reach.
-  // Defaults scale with the frame — a bare `# square` is a poster block, a
-  // bare `# circle` a disc — and a written geometry slot replaces its default
-  // wholesale, exactly as the tables in MetaprogrammerParser.js describe.
-  function p5ShapePath(dc, shape, scale) {
-    const g = shape.geometry || [];
-    const m = Math.min(width, height);
-    dc.beginPath();
-    switch (shape.name) {
-      case 'square': {
-        const s = n(g[0], m * 0.6) * scale;
-        dc.rect(-s / 2, -s / 2, s, s);
-        return s / 2;
+      // Spin: turns per cycle on each axis. An absent animation group keeps
+      // the default turn; a written one silences the slots it rests (`~`), so
+      // `[0 ~ ~]` parks X and Z and leaves Y. Every copy turns about its OWN
+      // center — a tiled lattice or a honeycomb stays put, copies spinning in
+      // their cells — so position and spin go into each instance's matrix.
+      S.q.identity();
+      if (st) {
+        const a = spinOf(st.animation, [0, 0.5, 0]);
+        S.e.set(slot(a[0]) * pos * TAU, slot(a[1]) * pos * TAU, slot(a[2]) * pos * TAU);
+        S.q.setFromEuler(S.e);
+        three.tex.repeat.set(n(sc[2], 1), n(sc[3], 1));
       }
-      case 'circle': {
-        const r = n(g[0], m * 0.33) * scale;
-        dc.arc(0, 0, r, 0, TAU);
-        return r;
-      }
-      case 'triangle': {
-        const r = n(g[0], m * 0.4) * scale;
-        for (let i = 0; i < 3; i++) {
-          const a = -Math.PI / 2 + (i * TAU) / 3;
-          const x = Math.cos(a) * r, y = Math.sin(a) * r;
-          if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
+      if (three.mesh) {
+        const count = Math.min(cells.length, MAX_INSTANCES);
+        S.s.setScalar(lay.meshScale);
+        for (let i = 0; i < count; i++) {
+          S.p.set(cells[i].x, cells[i].y, 0);
+          S.m.compose(S.p, S.q, S.s);
+          three.mesh.setMatrixAt(i, S.m);
         }
-        dc.closePath();
-        return r;
+        three.mesh.count = count;
+        three.mesh.instanceMatrix.needsUpdate = true;
       }
-      case 'star': {
-        const R = n(g[0], m * 0.36) * scale;
-        const points = ip(g[1], 5, 3, 24);
-        const inner = Math.min(0.95, Math.max(0.2, n(g[2], 0.45)));
-        for (let i = 0; i < points * 2; i++) {
-          const r = i % 2 === 0 ? R : R * inner;
-          const a = -Math.PI / 2 + (i * Math.PI) / points;
-          const x = Math.cos(a) * r, y = Math.sin(a) * r;
-          if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
-        }
-        dc.closePath();
-        return R;
+
+      const cam = three.camera;
+      cam.position.copy(pose.target).add(pose.offset);
+      cam.up.copy(pose.up);
+      cam.lookAt(pose.target);
+      if (pose.roll) cam.rotateZ(pose.roll * DEG);
+
+      const pointsSig = state.particle3
+        ? JSON.stringify([state.particle3.count, st ? st.name : null, st ? st.geometry : null])
+        : '';
+      if (pointsSig !== three.pointsSig) {
+        three.pointsSig = pointsSig;
+        rebuildPoints(st);
       }
-      case 'polygon': {
-        const sides = ip(g[0], 6, 3, 32);
-        const r = n(g[1], m * 0.36) * scale;
-        for (let i = 0; i < sides; i++) {
-          const a = -Math.PI / 2 + (i * TAU) / sides;
-          const x = Math.cos(a) * r, y = Math.sin(a) * r;
-          if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
-        }
-        dc.closePath();
-        return r;
-      }
-      default: {
-        const s = m * 0.6 * scale;
-        dc.rect(-s / 2, -s / 2, s, s);
-        return s / 2;
+      // The cloud follows the copy nearest the center — the one the eye lands
+      // on — sharing its spin and scale so it stays on that copy's surface.
+      const home = st && cells.length
+        ? cells.reduce((b, c) => (c.x * c.x + c.y * c.y < b.x * b.x + b.y * b.y ? c : b))
+        : { x: 0, y: 0 };
+      three.pivot.position.set(home.x, home.y, 0);
+      three.pivot.quaternion.copy(S.q);
+      three.pivot.scale.setScalar(lay.meshScale);
+      updatePoints(pos);
+
+      syncLights(pos, Math.max(2, lay.dist * 0.8));
+      three.renderer.render(three.scene, three.camera);
+    }
+
+    // --- p5.js -----------------------------------------------------------------
+
+    function makeP5() {
+      try {
+        p5Inst = new window.p5((p) => {
+          p.setup = () => {
+            const r = p.createCanvas(width, height);
+            p5Canvas = (r && (r.elt || r.canvas)) || p5Canvas || container.querySelector('canvas');
+            p.noLoop();
+          };
+          p.draw = () => {
+            if (p5Frame) drawP5(p.drawingContext, p5Frame);
+          };
+        }, container);
+        if (!p5Canvas) p5Canvas = container.querySelector('canvas');
+        return true;
+      } catch (e) {
+        p5Failed = true;
+        p5Inst = null;
+        noteError('p5 stage', e);
+        return false;
       }
     }
-  }
 
-  // Cover-fit the frame into a box (crop, never letterbox — a texture fills
-  // its region), optionally as a repeatU×repeatV grid of itself, which is
-  // what the scene group's repeat slots mean in 2D.
-  function drawTiledVideo(dc, tex, x, y, w, h, rU, rV) {
-    const tw0 = tex.width || width, th0 = tex.height || height;
-    const tw = w / rU, th = h / rV;
-    const sa = Math.max(tw / tw0, th / th0);
-    const dw = tw0 * sa, dh = th0 * sa;
-    for (let i = 0; i < rU; i++) {
-      for (let j = 0; j < rV; j++) {
-        const tx = x + i * tw, ty = y + j * th;
-        const dx = tx + (tw - dw) / 2, dy = ty + (th - dh) / 2;
-        if (rU === 1 && rV === 1) {
+    function spinOf(group, dflt) {
+      if (!group || group.length === 0) return dflt;
+      return group.map(slot);
+    }
+
+    // The 2D shape's path, centered on the current transform, returning its
+    // half-extent so the caller knows how far the video fill must reach.
+    // Defaults scale with the frame — a bare `# square` is a poster block, a
+    // bare `# circle` a disc — and a written geometry slot replaces its default
+    // wholesale, exactly as the tables in MetaprogrammerParser.js describe.
+    function p5ShapePath(dc, shape, scale) {
+      const g = shape.geometry || [];
+      const m = Math.min(width, height);
+      dc.beginPath();
+      switch (shape.name) {
+        case 'square': {
+          const s = n(g[0], m * 0.6) * scale;
+          dc.rect(-s / 2, -s / 2, s, s);
+          return s / 2;
+        }
+        case 'circle': {
+          const r = n(g[0], m * 0.33) * scale;
+          dc.arc(0, 0, r, 0, TAU);
+          return r;
+        }
+        case 'triangle': {
+          const r = n(g[0], m * 0.4) * scale;
+          for (let i = 0; i < 3; i++) {
+            const a = -Math.PI / 2 + (i * TAU) / 3;
+            const x = Math.cos(a) * r, y = Math.sin(a) * r;
+            if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
+          }
+          dc.closePath();
+          return r;
+        }
+        case 'star': {
+          const R = n(g[0], m * 0.36) * scale;
+          const points = ip(g[1], 5, 3, 24);
+          const inner = Math.min(0.95, Math.max(0.2, n(g[2], 0.45)));
+          for (let i = 0; i < points * 2; i++) {
+            const r = i % 2 === 0 ? R : R * inner;
+            const a = -Math.PI / 2 + (i * Math.PI) / points;
+            const x = Math.cos(a) * r, y = Math.sin(a) * r;
+            if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
+          }
+          dc.closePath();
+          return R;
+        }
+        case 'polygon': {
+          const sides = ip(g[0], 6, 3, 32);
+          const r = n(g[1], m * 0.36) * scale;
+          for (let i = 0; i < sides; i++) {
+            const a = -Math.PI / 2 + (i * TAU) / sides;
+            const x = Math.cos(a) * r, y = Math.sin(a) * r;
+            if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
+          }
+          dc.closePath();
+          return r;
+        }
+        default: {
+          const s = m * 0.6 * scale;
+          dc.rect(-s / 2, -s / 2, s, s);
+          return s / 2;
+        }
+      }
+    }
+
+    // Cover-fit the frame into a box (crop, never letterbox — a texture fills
+    // its region), optionally as a repeatU×repeatV grid of itself, which is
+    // what the scene group's repeat slots mean in 2D.
+    function drawTiledVideo(dc, tex, x, y, w, h, rU, rV) {
+      const tw0 = tex.width || width, th0 = tex.height || height;
+      const tw = w / rU, th = h / rV;
+      const sa = Math.max(tw / tw0, th / th0);
+      const dw = tw0 * sa, dh = th0 * sa;
+      for (let i = 0; i < rU; i++) {
+        for (let j = 0; j < rV; j++) {
+          const tx = x + i * tw, ty = y + j * th;
+          const dx = tx + (tw - dw) / 2, dy = ty + (th - dh) / 2;
+          if (rU === 1 && rV === 1) {
+            dc.drawImage(tex, dx, dy, dw, dh);
+            continue;
+          }
+          dc.save();
+          dc.beginPath();
+          dc.rect(tx, ty, tw, th);
+          dc.clip();
           dc.drawImage(tex, dx, dy, dw, dh);
-          continue;
+          dc.restore();
         }
-        dc.save();
-        dc.beginPath();
-        dc.rect(tx, ty, tw, th);
-        dc.clip();
-        dc.drawImage(tex, dx, dy, dw, dh);
-        dc.restore();
       }
     }
-  }
 
-  function drawP5Shape(dc, st, frame) {
-    const sc = st.scene || [];
-    const scale = n(sc[0], 1);
-    const rU = Math.min(16, Math.max(1, i1(sc[1])));
-    const rV = Math.min(16, Math.max(1, i1(sc[2])));
-    const spin = slot(spinOf(st.animation, [0.25])[0]);
-    dc.save();
-    dc.translate(width / 2, height / 2);
-    dc.rotate(frame.pos * spin * TAU);
-    const half = p5ShapePath(dc, st.shape, scale);
-    dc.clip();
-    drawTiledVideo(dc, frame.tex, -half, -half, half * 2, half * 2, rU, rV);
-    dc.restore();
-  }
-
-  // The quilt reading of the frame: a cols×rows lattice, every cell cover-
-  // fitting the video, alternate rows and columns mirrored so seams match
-  // edge to edge — the eye reads the interlock rather than a strip of repeats.
-  // The whole lattice turns with the spin param; the corners it uncovers show
-  // the background layer through.
-  function drawTessellation(dc, ts, frame) {
-    const cols = Math.min(16, Math.max(1, Math.round(ts.cols || 4)));
-    const rows = Math.min(12, Math.max(1, Math.round(ts.rows || 3)));
-    const spin = slot(ts.spin);
-    const cw = width / cols, ch = height / rows;
-    const tw0 = frame.tex.width || width, th0 = frame.tex.height || height;
-    const sa = Math.max(cw / tw0, ch / th0);
-    const dw = tw0 * sa, dh = th0 * sa;
-    dc.save();
-    dc.translate(width / 2, height / 2);
-    dc.rotate(frame.pos * spin * TAU);
-    dc.translate(-width / 2, -height / 2);
-    for (let i = 0; i < cols; i++) {
-      for (let j = 0; j < rows; j++) {
-        dc.save();
-        dc.beginPath();
-        dc.rect(i * cw, j * ch, cw, ch);
-        dc.clip();
-        dc.translate(i * cw + cw / 2, j * ch + ch / 2);
-        if (i % 2) dc.scale(-1, 1);
-        if (j % 2) dc.scale(1, -1);
-        dc.drawImage(frame.tex, -dw / 2, -dh / 2, dw, dh);
-        dc.restore();
-      }
-    }
-    dc.restore();
-  }
-
-  // particle2: the frame's own pixels set loose — each particle keeps a home
-  // cell on a jittered grid, drifts around it once per cycle (speed is the
-  // rate in cycles, so the swarm breathes with the grid), and paints itself
-  // from the video at its LIVE position. With a 2D shape active the whole
-  // swarm is clipped to it, particles filling the form the way the texture
-  // does.
-  function drawParticle2(dc, st, frame) {
-    const cfg = st.particle2;
-    const count = Math.min(8000, Math.max(16, Math.round(cfg.count)));
-    const size = n(cfg.size, 3);
-    const speed = n(cfg.speed, 1);
-    ensureP2(count);
-    const amp = size * 2.5;
-    const sh = st.shape && st.shape.family === 'p5' ? st.shape : null;
-    const rot = sh ? frame.pos * slot(spinOf(sh.animation, [0.25])[0]) * TAU : 0;
-    if (sh) {
+    // `sh` is the shape itself — its scene and animation groups live on it,
+    // not on the stage state.
+    function drawP5Shape(dc, sh, frame) {
+      const sc = sh.scene || [];
+      const scale = n(sc[0], 1);
+      const rU = Math.min(16, Math.max(1, i1(sc[1])));
+      const rV = Math.min(16, Math.max(1, i1(sc[2])));
+      const spin = slot(spinOf(sh.animation, [0.25])[0]);
       dc.save();
       dc.translate(width / 2, height / 2);
-      dc.rotate(rot);
-      p5ShapePath(dc, sh, n((sh.scene || [])[0], 1));
+      dc.rotate(frame.pos * spin * TAU);
+      const half = p5ShapePath(dc, sh, scale);
       dc.clip();
-      // Clip first, then unwind the transform: the region is fixed in device
-      // space, and the particles below want plain canvas coordinates.
-      dc.rotate(-rot);
-      dc.translate(-width / 2, -height / 2);
+      drawTiledVideo(dc, frame.tex, -half, -half, half * 2, half * 2, rU, rV);
+      dc.restore();
     }
-    for (let i = 0; i < count; i++) {
-      const bx = p2Base[i * 2], by = p2Base[i * 2 + 1], ph = p2Phase[i];
-      const x = bx * width + Math.sin(ph + frame.pos * speed * TAU) * amp;
-      const y = by * height + Math.cos(ph * 1.7 + frame.pos * speed * TAU) * amp;
-      const c = sampleAt(x, y);
-      dc.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
-      dc.fillRect(x - size / 2, y - size / 2, size, size);
-    }
-    if (sh) dc.restore();
-  }
 
-  function ensureP2(count) {
-    if (p2Base && p2Sig === String(count)) return;
-    p2Sig = String(count);
-    p2Base = new Float32Array(count * 2);
-    p2Phase = new Float32Array(count);
-    const cols = Math.max(1, Math.ceil(Math.sqrt(count * ASPECT)));
-    const rows = Math.max(1, Math.ceil(count / cols));
-    for (let i = 0; i < count; i++) {
-      p2Base[i * 2] = ((i % cols) + 0.15 + Math.random() * 0.7) / cols;
-      p2Base[i * 2 + 1] = (Math.floor(i / cols) + 0.15 + Math.random() * 0.7) / rows;
-      p2Phase[i] = Math.random() * TAU;
-    }
-  }
-
-  function ensureTiny(tex) {
-    try {
-      if (!tiny) {
-        tiny = document.createElement('canvas');
-        tiny.width = TINY_W;
-        tiny.height = TINY_H;
-      }
-      const tc = tiny.getContext('2d', { willReadFrequently: true });
-      tc.drawImage(tex, 0, 0, TINY_W, TINY_H);
-      tinyData = tc.getImageData(0, 0, TINY_W, TINY_H).data;
-    } catch (e) {
-      tinyData = null; // particles fall back to a flat tint rather than dying
-      noteError('particle sample', e);
-    }
-  }
-
-  function sampleAt(x, y) {
-    if (!tinyData) return [200, 200, 200];
-    const tx = Math.min(TINY_W - 1, Math.max(0, Math.round((x / width) * (TINY_W - 1))));
-    const ty = Math.min(TINY_H - 1, Math.max(0, Math.round((y / height) * (TINY_H - 1))));
-    const o = (ty * TINY_W + tx) * 4;
-    return [tinyData[o], tinyData[o + 1], tinyData[o + 2]];
-  }
-
-  function drawP5(dc, frame) {
-    if (!dc) return;
-    dc.setTransform(1, 0, 0, 1, 0, 0);
-    dc.globalAlpha = 1;
-    dc.globalCompositeOperation = 'source-over';
-    dc.filter = 'none';
-    dc.clearRect(0, 0, width, height); // transparent: background shows through
-    const st = state;
-    if (st.shape && st.shape.family === 'p5') drawP5Shape(dc, st, frame);
-    if (st.tessellation) drawTessellation(dc, st.tessellation, frame);
-    if (st.particle2) drawParticle2(dc, st, frame);
-  }
-
-  // --- background ---------------------------------------------------------------
-
-  // Ground before form: the backdrop is painted onto the target first, so
-  // every layer composites over it. An image is requested in CORS mode — if
-  // the host does not allow it the load fails and the base stays, which is
-  // what keeps the published canvas untainted (a taint would make the whole
-  // frame unpublishable).
-  function paintBackground(dc) {
-    const bg = state && state.background;
-    if (!bg) return;
-    if (bg.type === 'color') {
-      if (bg.color) {
-        dc.fillStyle = bg.color;
-        dc.fillRect(0, 0, width, height);
-      }
-      return;
-    }
-    if (bg.type === 'gradient') {
-      const a = ((typeof bg.angle === 'number' && isFinite(bg.angle) ? bg.angle : 90) * Math.PI) / 180;
+    // `# tessellation` with a 2D shape: the shape tiles the WHOLE page, at
+    // least cols × rows of it, in the lattice that shape really tiles in —
+    // squares in a grid, triangles alternating up and down, hexagons in a
+    // honeycomb, diamonds (4-gons) in offset rows; circles, stars and other
+    // polygons close-packed in staggered rows, the background showing in the
+    // gaps. Each copy is filled with the frame and spins in place at the
+    // shape's own spin; scale reads as how full each cell is. The lattice
+    // reaches a cell past every edge so no border is left bare.
+    function drawP5ShapeTessellation(dc, sh, ts, frame) {
+      const cols = ip(ts.cols, 4, 1, 16), rows = ip(ts.rows, 3, 1, 12);
+      const g = sh.geometry || [];
+      const sc = sh.scene || [];
+      const scale = n(sc[0], 1);
+      const rU = Math.min(16, Math.max(1, i1(sc[1])));
+      const rV = Math.min(16, Math.max(1, i1(sc[2])));
+      const turn = frame.pos * slot(spinOf(sh.animation, [0.25])[0]) * TAU;
+      const sides = sh.name === 'polygon' ? ip(g[0], 6, 3, 32) : (sh.name === 'triangle' ? 3 : 0);
       const cx = width / 2, cy = height / 2;
-      const L = (Math.abs(width * Math.cos(a)) + Math.abs(height * Math.sin(a))) / 2;
-      const grad = dc.createLinearGradient(
-        cx - Math.cos(a) * L, cy - Math.sin(a) * L,
-        cx + Math.cos(a) * L, cy + Math.sin(a) * L
-      );
-      grad.addColorStop(0, bg.from || '#ff00aa');
-      grad.addColorStop(1, bg.to || '#002244');
-      dc.fillStyle = grad;
-      dc.fillRect(0, 0, width, height);
-      return;
-    }
-    if (bg.type === 'image' && bg.url) {
-      if (bgWanted !== bg.url) {
-        bgWanted = bg.url;
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => { if (bgWanted === bg.url) bgImage = img; };
-        img.onerror = () => {
-          if (bgWanted === bg.url) {
-            bgImage = null;
-            noteError('background image', new Error(`could not load ${bg.url}`));
+      const cells = [];
+      // Centers of a rows-of-cells lattice anchored on the page center, odd
+      // rows shifted `odd` sideways.
+      const lattice = (pitchX, stepY, odd) => {
+        const nx = Math.ceil(cx / pitchX) + 1, ny = Math.ceil(cy / stepY) + 1;
+        for (let j = -ny; j <= ny; j++) {
+          const off = j & 1 ? odd : 0;
+          for (let i = -nx; i <= nx; i++) cells.push({ x: cx + i * pitchX + off, y: cy + j * stepY, rot: 0 });
+        }
+      };
+      // The shape at the size that fills one cell: its size slot replaced,
+      // its other geometry (star points, polygon sides) kept.
+      let cellShape;
+      if (sh.name === 'square') {
+        const s = Math.min(width / cols, height / rows);
+        lattice(s, s, 0);
+        cellShape = { ...sh, geometry: [s] };
+      } else if (sides === 3) {
+        // Side a; each row of height h alternates up and down triangles, both
+        // centered on their centroids (a sixth of h either side of the row).
+        const a = Math.min(width / cols, (2 * (height / rows)) / Math.sqrt(3));
+        const h = (a * Math.sqrt(3)) / 2;
+        const nx = Math.ceil(cx / (a / 2)) + 2, ny = Math.ceil(cy / h) + 1;
+        for (let j = -ny; j <= ny; j++) {
+          for (let i = -nx; i <= nx; i++) {
+            const up = ((i + j) & 1) === 0;
+            cells.push({ x: cx + (i * a) / 2, y: cy + j * h + (up ? h / 6 : -h / 6), rot: up ? 0 : Math.PI });
           }
-        };
-        img.src = bg.url;
+        }
+        const r = a / Math.sqrt(3);
+        cellShape = { ...sh, geometry: sh.name === 'polygon' ? [3, r] : [r] };
+      } else if (sides === 6) {
+        // Pointy-top hexagons (the path starts at the top vertex): √3·r across,
+        // 1.5·r down, odd rows half a cell over.
+        const r = Math.min(width / (cols * Math.sqrt(3)), height / (rows * 1.5));
+        lattice(Math.sqrt(3) * r, 1.5 * r, (Math.sqrt(3) * r) / 2);
+        cellShape = { ...sh, geometry: [6, r] };
+      } else if (sides === 4) {
+        const r = Math.min(width / (cols * 2), height / (rows * 2));
+        lattice(2 * r, r, r);
+        cellShape = { ...sh, geometry: [4, r] };
+      } else {
+        const r = Math.min(width / (cols * 2), height / (rows * Math.sqrt(3)));
+        lattice(2 * r, Math.sqrt(3) * r, r);
+        cellShape = { ...sh, geometry: sh.name === 'star' ? [r, g[1], g[2]] : (sh.name === 'polygon' ? [sides, r] : [r]) };
       }
-      if (bgImage && bgImage.naturalWidth) {
-        const s = Math.max(width / bgImage.naturalWidth, height / bgImage.naturalHeight);
-        const w = bgImage.naturalWidth * s, h = bgImage.naturalHeight * s;
-        dc.drawImage(bgImage, (width - w) / 2, (height - h) / 2, w, h);
+      // Fill one cell's worth of frame once, then stamp it into every cell —
+      // hundreds of copies resampling the full frame each would cost far more.
+      dc.save();
+      const half = p5ShapePath(dc, cellShape, scale);
+      dc.restore();
+      const side = Math.max(1, Math.ceil(half * 2));
+      cellBuf = cellBuf || document.createElement('canvas');
+      if (cellBuf.width !== side) cellBuf.width = side;
+      if (cellBuf.height !== side) cellBuf.height = side;
+      const cc = cellBuf.getContext('2d');
+      cc.clearRect(0, 0, side, side);
+      drawTiledVideo(cc, frame.tex, 0, 0, side, side, rU, rV);
+      for (const c of cells) {
+        dc.save();
+        dc.translate(c.x, c.y);
+        dc.rotate(c.rot + turn);
+        p5ShapePath(dc, cellShape, scale);
+        dc.clip();
+        dc.drawImage(cellBuf, -half, -half, half * 2, half * 2);
+        dc.restore();
       }
     }
-  }
 
-  // --- composition --------------------------------------------------------------
+    // The quilt reading of the frame: a cols×rows lattice, every cell cover-
+    // fitting the video, alternate rows and columns mirrored so seams match
+    // edge to edge — the eye reads the interlock rather than a strip of repeats.
+    // The whole lattice turns with the spin param; the corners it uncovers show
+    // the background layer through.
+    function drawTessellation(dc, ts, frame) {
+      const cols = Math.min(16, Math.max(1, Math.round(ts.cols || 4)));
+      const rows = Math.min(12, Math.max(1, Math.round(ts.rows || 3)));
+      const spin = slot(ts.spin);
+      const cw = width / cols, ch = height / rows;
+      const tw0 = frame.tex.width || width, th0 = frame.tex.height || height;
+      const sa = Math.max(cw / tw0, ch / th0);
+      const dw = tw0 * sa, dh = th0 * sa;
+      dc.save();
+      dc.translate(width / 2, height / 2);
+      dc.rotate(frame.pos * spin * TAU);
+      dc.translate(-width / 2, -height / 2);
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+          dc.save();
+          dc.beginPath();
+          dc.rect(i * cw, j * ch, cw, ch);
+          dc.clip();
+          dc.translate(i * cw + cw / 2, j * ch + ch / 2);
+          if (i % 2) dc.scale(-1, 1);
+          if (j % 2) dc.scale(1, -1);
+          dc.drawImage(frame.tex, -dw / 2, -dh / 2, dw, dh);
+          dc.restore();
+        }
+      }
+      dc.restore();
+    }
 
-  // Ground to surface: black, backdrop, three.js layers (skybox → shape →
-  // cloud), p5 layers (shape → tessellation → particles). The result is what
-  // the effects chain then reads — crush, blur, grain and echo treat a
-  // rendered sphere exactly as they treat the flat mosaic.
-  function render(tex, target) {
-    if (!state) return;
-    const dc = target.getContext('2d');
-    if (!dc) return;
-    const need = libNeeds();
-    const frame = { tex, pos: cyclePos() };
-    try {
+    // particle2: the frame's own pixels set loose — each particle keeps a home
+    // cell on a jittered grid, drifts around it once per cycle (speed is the
+    // rate in cycles, so the swarm breathes with the grid), and paints itself
+    // from the video at its LIVE position. With a 2D shape active the whole
+    // swarm is clipped to it, particles filling the form the way the texture
+    // does.
+    function drawParticle2(dc, st, frame) {
+      const cfg = st.particle2;
+      const count = Math.min(8000, Math.max(16, Math.round(cfg.count)));
+      const size = n(cfg.size, 3);
+      const speed = rate(cfg.speed, 1);
+      ensureP2(count);
+      const amp = size * 2.5;
+      // Clipped to a lone 2D shape; a tessellated one already covers the page.
+      const sh = st.shape && st.shape.family === 'p5' && !st.tessellation ? st.shape : null;
+      const rot = sh ? frame.pos * slot(spinOf(sh.animation, [0.25])[0]) * TAU : 0;
+      if (sh) {
+        dc.save();
+        dc.translate(width / 2, height / 2);
+        dc.rotate(rot);
+        p5ShapePath(dc, sh, n((sh.scene || [])[0], 1));
+        dc.clip();
+        // Clip first, then unwind the transform: the region is fixed in device
+        // space, and the particles below want plain canvas coordinates.
+        dc.rotate(-rot);
+        dc.translate(-width / 2, -height / 2);
+      }
+      for (let i = 0; i < count; i++) {
+        const bx = p2Base[i * 2], by = p2Base[i * 2 + 1], ph = p2Phase[i];
+        const x = bx * width + Math.sin(ph + frame.pos * speed * TAU) * amp;
+        const y = by * height + Math.cos(ph * 1.7 + frame.pos * speed * TAU) * amp;
+        const c = sampleAt(x, y);
+        dc.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+        dc.fillRect(x - size / 2, y - size / 2, size, size);
+      }
+      if (sh) dc.restore();
+    }
+
+    function ensureP2(count) {
+      if (p2Base && p2Sig === String(count)) return;
+      p2Sig = String(count);
+      p2Base = new Float32Array(count * 2);
+      p2Phase = new Float32Array(count);
+      const cols = Math.max(1, Math.ceil(Math.sqrt(count * ASPECT)));
+      const rows = Math.max(1, Math.ceil(count / cols));
+      for (let i = 0; i < count; i++) {
+        p2Base[i * 2] = ((i % cols) + 0.15 + Math.random() * 0.7) / cols;
+        p2Base[i * 2 + 1] = (Math.floor(i / cols) + 0.15 + Math.random() * 0.7) / rows;
+        p2Phase[i] = Math.random() * TAU;
+      }
+    }
+
+    function ensureTiny(tex) {
+      try {
+        if (!tiny) {
+          tiny = document.createElement('canvas');
+          tiny.width = TINY_W;
+          tiny.height = TINY_H;
+        }
+        const tc = tiny.getContext('2d', { willReadFrequently: true });
+        tc.drawImage(tex, 0, 0, TINY_W, TINY_H);
+        tinyData = tc.getImageData(0, 0, TINY_W, TINY_H).data;
+      } catch (e) {
+        tinyData = null; // particles fall back to a flat tint rather than dying
+        noteError('particle sample', e);
+      }
+    }
+
+    function sampleAt(x, y) {
+      if (!tinyData) return [200, 200, 200];
+      const tx = Math.min(TINY_W - 1, Math.max(0, Math.round((x / width) * (TINY_W - 1))));
+      const ty = Math.min(TINY_H - 1, Math.max(0, Math.round((y / height) * (TINY_H - 1))));
+      const o = (ty * TINY_W + tx) * 4;
+      return [tinyData[o], tinyData[o + 1], tinyData[o + 2]];
+    }
+
+    function drawP5(dc, frame) {
+      if (!dc) return;
       dc.setTransform(1, 0, 0, 1, 0, 0);
       dc.globalAlpha = 1;
       dc.globalCompositeOperation = 'source-over';
       dc.filter = 'none';
-      dc.fillStyle = '#000';
-      dc.fillRect(0, 0, width, height);
-      paintBackground(dc);
-      if (need.particle2 || need.particle3) ensureTiny(tex);
-      if (need.three && three) {
-        renderThree(tex, frame.pos);
-        dc.drawImage(three.canvas, 0, 0);
-      }
-      if (need.p5 && p5Inst) {
-        p5Frame = frame;
-        try { p5Inst.redraw(); } catch (e) { noteError('p5 redraw', e); }
-        if (p5Canvas) dc.drawImage(p5Canvas, 0, 0);
-      }
-    } catch (e) {
-      noteError('output render', e);
+      dc.clearRect(0, 0, width, height); // transparent: background shows through
+      const st = state;
+      const sh = st.shape && st.shape.family === 'p5' ? st.shape : null;
+      if (sh && st.tessellation) drawP5ShapeTessellation(dc, sh, st.tessellation, frame);
+      else if (sh) drawP5Shape(dc, sh, frame);
+      // With no shape, tessellation is the mirrored quilt of the frame; a 3D
+      // shape's tessellation is its three.js honeycomb, not drawn here.
+      if (st.tessellation && !st.shape) drawTessellation(dc, st.tessellation, frame);
+      if (st.particle2) drawParticle2(dc, st, frame);
     }
-  }
 
-  function diag() {
-    const need = libNeeds();
-    const vendor = window.__trussalVendor || {};
-    const lib = (wanted, failed, built, present, src) => (
-      failed ? 'error' : !wanted ? 'off' : (built || present) ? 'ready' : (src) ? 'loading' : 'waiting'
-    );
-    return {
-      active: active(),
-      state: state ? {
-        shape: state.shape ? { name: state.shape.name, family: state.shape.family } : null,
-        tiling: state.tiling ? state.tiling.mode : null,
-        skybox: !!state.skybox,
-        particle2: !!state.particle2,
-        particle3: !!state.particle3,
-        tessellation: !!state.tessellation,
-        background: state.background ? state.background.type : null,
-      } : null,
-      libs: {
-        three: lib(need.three, threeFailed, three, window.THREE, vendor.three),
-        p5: lib(need.p5, p5Failed, p5Inst, window.p5, vendor.p5),
-      },
-    };
-  }
+    // --- background -------------------------------------------------------------
 
-  return { setState, vendorNeeds, active, render, diag };
+    // Ground before form: the backdrop is painted onto the target first, so
+    // every layer composites over it. An image is requested in CORS mode — if
+    // the host does not allow it the load fails and the base stays, which is
+    // what keeps the published canvas untainted (a taint would make the whole
+    // frame unpublishable).
+    function paintBackground(dc) {
+      const bg = state && state.background;
+      if (!bg) return;
+      if (bg.type === 'color') {
+        if (bg.color) {
+          dc.fillStyle = bg.color;
+          dc.fillRect(0, 0, width, height);
+        }
+        return;
+      }
+      if (bg.type === 'gradient') {
+        const a = ((typeof bg.angle === 'number' && isFinite(bg.angle) ? bg.angle : 90) * Math.PI) / 180;
+        const cx = width / 2, cy = height / 2;
+        const L = (Math.abs(width * Math.cos(a)) + Math.abs(height * Math.sin(a))) / 2;
+        const grad = dc.createLinearGradient(
+          cx - Math.cos(a) * L, cy - Math.sin(a) * L,
+          cx + Math.cos(a) * L, cy + Math.sin(a) * L
+        );
+        grad.addColorStop(0, bg.from || '#ff00aa');
+        grad.addColorStop(1, bg.to || '#002244');
+        dc.fillStyle = grad;
+        dc.fillRect(0, 0, width, height);
+        return;
+      }
+      if (bg.type === 'image' && bg.url) {
+        if (bgWanted !== bg.url) {
+          bgWanted = bg.url;
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => { if (bgWanted === bg.url) bgImage = img; };
+          img.onerror = () => {
+            if (bgWanted === bg.url) {
+              bgImage = null;
+              noteError('background image', new Error(`could not load ${bg.url}`));
+            }
+          };
+          img.src = bg.url;
+        }
+        if (bgImage && bgImage.naturalWidth) {
+          const s = Math.max(width / bgImage.naturalWidth, height / bgImage.naturalHeight);
+          const w = bgImage.naturalWidth * s, h = bgImage.naturalHeight * s;
+          dc.drawImage(bgImage, (width - w) / 2, (height - h) / 2, w, h);
+        }
+      }
+    }
+
+    // --- composition ------------------------------------------------------------
+
+    // Ground to surface: black, backdrop, three.js layers (skybox → shape →
+    // cloud), p5 layers (shape → tessellation → particles). The result is what
+    // the effects chain then reads — crush, blur, grain and echo treat a
+    // rendered sphere exactly as they treat the flat mosaic.
+    function render(tex, target) {
+      if (!state) return;
+      const dc = target.getContext('2d');
+      if (!dc) return;
+      const need = libNeeds();
+      const frame = { tex, pos: cyclePos() };
+      try {
+        dc.setTransform(1, 0, 0, 1, 0, 0);
+        dc.globalAlpha = 1;
+        dc.globalCompositeOperation = 'source-over';
+        dc.filter = 'none';
+        dc.fillStyle = '#000';
+        dc.fillRect(0, 0, width, height);
+        paintBackground(dc);
+        if (state.particle2 || state.particle3) ensureTiny(tex);
+        if (need.three && three) {
+          renderThree(tex, frame.pos);
+          dc.drawImage(three.canvas, 0, 0);
+        }
+        if (need.p5 && p5Inst) {
+          p5Frame = frame;
+          try { p5Inst.redraw(); } catch (e) { noteError('p5 redraw', e); }
+          if (p5Canvas) dc.drawImage(p5Canvas, 0, 0);
+        }
+      } catch (e) {
+        noteError('output render', e);
+      }
+    }
+
+    function diag() {
+      const need = libNeeds();
+      const vendor = window.__trussalVendor || {};
+      const lib = (wanted, failed, built, present, src) => (
+        failed ? 'error' : !wanted ? 'off' : (built || present) ? 'ready' : (src) ? 'loading' : 'waiting'
+      );
+      return {
+        active: active(),
+        state: state ? {
+          shape: state.shape ? { name: state.shape.name, family: state.shape.family } : null,
+          tiling: state.tiling ? state.tiling.mode : null,
+          skybox: !!state.skybox,
+          particle2: !!state.particle2,
+          particle3: !!state.particle3,
+          tessellation: !!state.tessellation,
+          background: state.background ? state.background.type : null,
+          camera3d: !!state.camera3d,
+          controls3d: state.controls3d ? state.controls3d.mode : null,
+          lighting3d: state.lighting3d ? state.lighting3d.mode : null,
+        } : null,
+        // Copies of the 3D shape drawn last frame — 1, a tiling's N, or the
+        // honeycomb's count for the patch in view.
+        instances: need.three && three && three.mesh ? three.mesh.count : 0,
+        libs: {
+          three: lib(need.three, threeFailed, three, window.THREE, vendor.three),
+          p5: lib(need.p5, p5Failed, p5Inst, window.p5, vendor.p5),
+        },
+      };
+    }
+
+    return { setState, vendorNeeds, active, render, diag };
+  }
 }
 
 /** Push the current mosaic cells + layout into the page. */

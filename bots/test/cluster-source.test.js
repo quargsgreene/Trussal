@@ -7,6 +7,7 @@ import {
   dropTextStatements,
   dropCssStatements,
   dropLiveCaptureStatements,
+  dropBackingStatements,
   masterFromPerformerCode,
 } from '../src/script-gen/cluster-source.js';
 import { validateCode } from '../src/script-gen/validate.js';
@@ -362,6 +363,14 @@ test('dropLiveCaptureStatements drops a liveCapture() voice entirely', () => {
   const code = "$: liveCapture('audio', 'Built-in Audio Analog Stereo', true).delay(.4)\n\nn(\"<0 1>\").s(\"piano\")";
   const out = dropLiveCaptureStatements(code);
   assert.ok(!out.includes('liveCapture('), 'the liveCapture() call is gone');
+  assert.match(out, /n\("<0 1>"\)\.s\("piano"\)/, 'the audio pattern survives');
+  assert.equal(validateCode(out).ok, true);
+});
+
+test('dropBackingStatements drops a backing() declaration, keeping the audio', () => {
+  const code = '$: backing("bed.wav", true, false)\n$: n("<0 1>").s("piano")';
+  const out = dropBackingStatements(code);
+  assert.ok(!out.includes('backing('), 'the backing() declaration is gone');
   assert.match(out, /n\("<0 1>"\)\.s\("piano"\)/, 'the audio pattern survives');
   assert.equal(validateCode(out).ok, true);
 });

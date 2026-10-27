@@ -116,6 +116,58 @@ test('# tiling takes a mode word, then an optional count group', () => {
   assert.ok(hasError('# tiling banana', /mode must be one of none, grid, hex, strip/));
 });
 
+// --- camera3d / controls3d / lighting3d ------------------------------------------
+
+test('# camera3d takes one group of up to five slots', () => {
+  assert.deepEqual(chain('# camera3d [30 60 2 35 10]')[0].args, [[30, 60, 2, 35, 10]]);
+  assert.deepEqual(chain('# camera3d [~ 45]')[0].args, [[null, 45]]);
+  assert.deepEqual(chain('# camera3d')[0].args, []);
+  assert.ok(hasError('# camera3d [1 2 3 4 5 6]', /takes 5 parameters \(azimuth, polar, zoom, fov, roll\), got 6/));
+  assert.ok(hasError('# camera3d [1] [2]', /takes at most 1 bracket group/));
+});
+
+test('# controls3d takes a mode, bare or quoted, then [speed amount]', () => {
+  const [orbit] = chain('# controls3d orbit [0.25 30]');
+  assert.equal(orbit.fn, 'controls3d');
+  assert.equal(orbit.mode, 'orbit');
+  assert.deepEqual(orbit.args, [[0.25, 30]]);
+  assert.equal(chain('# controls3d "trackball"')[0].mode, 'trackball',
+    'the mini notation carries a quoted mode through');
+  assert.ok(hasError('# controls3d', /controls3d needs a mode \(none \| orbit \| trackball \| map \| fly\)/));
+  assert.ok(hasError('# controls3d spin', /mode must be one of none, orbit, trackball, map, fly/));
+  assert.ok(hasError('# controls3d orbit [1 2 3]', /takes 2 parameters/));
+});
+
+test('# lighting3d takes a mode, a group, and one color or color pattern', () => {
+  const [dir] = chain('# lighting3d directional [2 90 30 0.5] "#ffccaa"');
+  assert.equal(dir.mode, 'directional');
+  assert.deepEqual(dir.args, [[2, 90, 30, 0.5]]);
+  assert.equal(dir.color, '#ffccaa');
+  const [pat] = chain('# lighting3d studio <"#fff" "#f80">');
+  assert.equal(isValuePattern(pat.color), true, 'the color is patternable');
+  const [gated] = chain('# lighting3d point "#f00" ["video"]');
+  assert.ok(gated.media, 'a medium set still comes last');
+  assert.equal(gated.color, '#f00');
+  assert.ok(hasError('# lighting3d point "#f00" "#0f0"', /takes one color/));
+  assert.ok(hasError('# lighting3d', /lighting3d needs a mode/));
+  assert.ok(hasError('# camera3d "#fff"', /unexpected argument/), 'only lighting3d takes a color');
+});
+
+test('mini notation: the view directives lower to their # forms', () => {
+  const { ast, errors } = parseMetaprogram(
+    "'metaprogram editor'\n" +
+    '$: participants("<0 1>")\n' +
+    '.camera3d("[30 60 2]")\n' +
+    '.controls3d("orbit", "[0.25]")\n' +
+    '.lighting3d("point", "[1.5]", "#ffd0a0")\n');
+  assert.deepEqual(errors.map((e) => e.message), []);
+  const byFn = Object.fromEntries(ast.chain.map((e) => [e.fn, e]));
+  assert.deepEqual(byFn.camera3d.args, [[30, 60, 2]]);
+  assert.equal(byFn.controls3d.mode, 'orbit');
+  assert.equal(byFn.lighting3d.mode, 'point');
+  assert.equal(byFn.lighting3d.color, '#ffd0a0');
+});
+
 // --- background --------------------------------------------------------------
 
 test('# background: a color, a two-color gradient, an image, or a clear', () => {

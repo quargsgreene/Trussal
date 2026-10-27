@@ -23,6 +23,8 @@
 ## 2. Documentation
 Documentation can be found [here](https://trussal.com).
 
+The personal editor's language dropdown can switch from JPattern to pure Strudel, pure Hydra, Punctual, TidalCycles, Sonic Pi, SuperCollider (sclang), Renardo, zwirn, Sardine, or a plain text mode. The terminal-based languages need their own interpreter installed and the local live bridge running (`npm run bridge`, which prints a token to paste into the editor) — per-language setup is in the Docs under "Personal Editor Languages".
+
 ## 3. Running locally
 Clone the repository and install the dependencies. You also need Docker installed. Then run `npm run dev:setup` to build the application. Then run `npm run dev` and navigate to one of the specified URLs in your browser of choice. You should be able to see updates in your browser for most of the application upon saving the corresponding modified file(s). If not, stop the dev server and rebuild. If a port remains stuck in use, try running `npm run dev:down` before further troubleshooting.
 

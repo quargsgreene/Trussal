@@ -58,6 +58,7 @@ import {
 } from './css-cycles-core.js';
 import { peerTextClass } from './text-cycles-core.js';
 import { isCssCyclesSuppressed, onCssCyclesSuppressChange } from './css-cycles-suppress.js';
+import { silentRenderer } from './multimedia-core.js';
 
 const STYLE_PREFIX = 'trussal-css-cycles-';
 
@@ -490,7 +491,7 @@ export function installCssCycles(mod) {
   }
 
   // Dominant trigger: this is what makes a css voice silent.
-  register('_ccRender', (pat) => pat.onTrigger(handleTrigger, true));
+  register('_ccRender', silentRenderer(handleTrigger, 'css'));
 
   scope.initCss = async () => {
     active = true;

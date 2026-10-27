@@ -17,8 +17,21 @@
 // next to the Face button. The panel itself stays a body-level fixed element
 // so it can be dragged anywhere and span the full width; tickKbdUi() retracts
 // it when the meeting ends, but it is no longer tied to any one Studio window.
+//
+// The 🌐 key (bottom left) opens a menu of writing systems
+// (writing-systems-core.js): picking one swaps the QWERTY rows for that
+// script's pages, and the choice is remembered per browser. IPA stays its own
+// key on every layout, and its ABC key returns to whichever script was on.
 
 import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
+import { IPA_PAGES, ipaKeyLabel } from './ipa-core.js';
+import {
+  WRITING_SYSTEMS, DEFAULT_SYSTEM, PER_ROW, writingSystem, systemPages, composeHangul,
+} from './writing-systems-core.js';
+import { EMOJI_MIMES, shortcode } from './custom-emoji-core.js';
+import {
+  addEmojiFromFile, removeEmoji, listOwnEmoji, emojiUrl, subscribeCustomEmoji, initCustomEmoji,
+} from './custom-emoji.js';
 import { isHeadCursorEnabled, setHeadCursorEnabled, setGestureDetectionEnabled } from './facial-gesture.js';
 import {
   attachHeadDragResize, isHeadDragActive, setPanelBox, pinTopLeft as _pinTopLeft,
@@ -29,6 +42,8 @@ export { pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
 const KBD_PANEL_ID  = 'trussal-kbd-panel';
 const KBD_TOGGLE_ID = 'trussal-kbd-toggle';
 const DWELL_MS      = 1000;
+// Per-viewer convenience: which writing system the keyboard was last left on.
+const SYSTEM_STORAGE_KEY = 'trussal-kbd-writing-system';
 
 // The single-line fields that live outside a meeting — Trussal's own welcome
 // overlay room-name box, the prejoin display-name input and the lobby knock
@@ -97,10 +112,145 @@ const ROWS = [
     {l:'⇧',k:'ShiftRight',w:2.25},
   ],
   [
-    {l:'←',k:'ArrowLeft',w:1.5},{l:'↑',k:'ArrowUp',w:1.5},{l:'↓',k:'ArrowDown',w:1.5}, {l:'→',k:'ArrowRight',w:1.5},
-    {l:'space',k:' ',w:6.5}, {l:'↵eval',k:'Eval',w:2},
+    {l:'🌐',k:'Globe',w:1.5,title:'Choose a writing system'},
+    {l:'←',k:'ArrowLeft',w:1.25},{l:'↑',k:'ArrowUp',w:1.25},{l:'↓',k:'ArrowDown',w:1.25}, {l:'→',k:'ArrowRight',w:1.25},
+    {l:'IPA',k:'IPA',w:1.5,title:'Show the IPA keyboard'},
+    {l:'space',k:' ',w:4.5}, {l:'↵eval',k:'Eval',w:2},
   ],
 ];
+
+// ── Writing-system layout ────────────────────────────────────────────────────
+// Any script other than Latin: a tab row when it has more than one page, the
+// page's keys, and an editing row that keeps 🌐 in the bottom-left corner.
+function _scriptRows() {
+  const ws    = writingSystem(_system);
+  const pages = ws.id === 'emoji' ? [..._ownEmojiPages(), ...systemPages(ws)] : systemPages(ws);
+  const page  = pages.find(p => p.id === _sysPage) || pages[0];
+  const perRow = page.perRow || PER_ROW;
+  const rows  = [];
+  if (pages.length > 1) {
+    rows.push(pages.map(p => ({
+      l: p.label, k: `SysPage:${p.id}`, w: perRow / pages.length,
+      title: `${ws.label}: ${p.label}`, on: p.id === page.id,
+    })));
+  }
+  for (const r of page.rows) {
+    const row = r.map(kd => ({ ...kd, script: true }));
+    if (row.length < perRow) row.push({ spacer: true, w: perRow - row.length });
+    rows.push(row);
+  }
+  const shift = page.rows.some(r => r.some(kd => kd.s));
+  rows.push([
+    {l:'🌐',k:'Globe',w:1.5,title:'Choose a writing system'},
+    ...(shift ? [{l:'⇧',k:'ShiftLeft',w:1.5}] : []),
+    {l:'←',k:'ArrowLeft'},{l:'→',k:'ArrowRight'},
+    {l:'⌫',k:'Backspace',w:1.5},
+    {l:'space',k:' ',w:shift ? 3.5 : 5},
+    {l:'↵',k:'Enter',w:1.5},
+    {l:'IPA',k:'IPA',w:1.5,title:'Show the IPA keyboard'},
+    {l:'↵eval',k:'Eval',w:2},
+  ]);
+  return rows;
+}
+
+// ── Uploaded emoji ("Mine") ──────────────────────────────────────────────────
+// The emoji keyboard's first page(s): ＋ to upload an image (or drop one on
+// the keyboard), 🗑 to switch to deleting, then this browser's uploads, each
+// typing its :shortcode: — which every browser in the meeting paints as the
+// picture (custom-emoji.js).
+let _emojiDeleteMode = false;
+let _fileInput       = null;
+
+function _ownEmojiPages() {
+  const keys = [
+    {l:'＋',k:'EmojiUpload',title:'Upload an image as an emoji (or drop one on the keyboard)'},
+    {l:'🗑',k:'EmojiDelete',title:'Delete mode: the next emoji you press is removed',on:_emojiDeleteMode},
+    ...listOwnEmoji().map(e => ({
+      l: e.name, k: shortcode(e.name), img: emojiUrl(e), emojiName: e.name,
+      title: _emojiDeleteMode ? `Delete ${shortcode(e.name)}` : shortcode(e.name),
+    })),
+  ];
+  const perPage = PER_ROW * 4;
+  const pages = [];
+  for (let i = 0; i < keys.length; i += perPage) {
+    const slice = keys.slice(i, i + perPage);
+    const rows = [];
+    for (let j = 0; j < slice.length; j += PER_ROW) rows.push(slice.slice(j, j + PER_ROW));
+    if (keys.length <= 2) {
+      rows[0].push({ spacer: true, w: PER_ROW - 2, text: 'Drop an image here, or press ＋, to make your own emoji' });
+    }
+    pages.push({ id: `mine-${pages.length + 1}`, label: pages.length ? `Mine ${pages.length + 1}` : 'Mine', rows });
+  }
+  return pages;
+}
+
+function _rerenderIfEmoji() {
+  if (_ipaPage || _system !== 'emoji') return;
+  const panel = document.getElementById(KBD_PANEL_ID);
+  if (panel) { _renderRows(panel.querySelector('.ts-kbd-body')); _renderModState(); }
+}
+
+// Upload status rides in the title bar for a few seconds.
+let _titleTimer = null;
+function _flashTitle(msg) {
+  const title = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-title`);
+  if (!title) return;
+  title.textContent = msg;
+  clearTimeout(_titleTimer);
+  _titleTimer = setTimeout(() => { title.textContent = _panelTitle(); }, 4000);
+}
+
+async function _uploadEmoji(files) {
+  const images = [...(files || [])].filter(f => /^image\//.test(f.type));
+  if (!images.length) { _flashTitle('Only image files can become emoji'); return; }
+  if (_system !== 'emoji') _chooseSystem('emoji');
+  _sysPage = null;
+  const added = [];
+  for (const file of images) {
+    try { added.push(shortcode(await addEmojiFromFile(file))); }
+    catch (e) { _flashTitle(e.message || 'Could not add that image'); return; }
+  }
+  _rerenderIfEmoji();
+  _flashTitle(`Added ${added.join(' ')}`);
+}
+
+// ── IPA layout ──────────────────────────────────────────────────────────────────
+// The IPA key swaps the key rows for one page of the chart (ipa-core.js's
+// IPA_PAGES) at a time: a tab row to pick the page or return to ABC, the
+// page's symbols, and the editing keys a performer still needs mid-word.
+// One page at a time keeps the keys big enough to dwell on — the whole chart
+// at once is ~195 keys. The last page is the chart's shaded cells, the
+// articulations judged impossible; their keys are shaded the same way.
+const IPA_PER_ROW = 15;
+
+function _ipaRows(pageId) {
+  const group = IPA_PAGES.find(g => g.id === pageId) || IPA_PAGES[0];
+  const ws = writingSystem(_system);
+  const tabs = [
+    {l: ws.id === DEFAULT_SYSTEM ? 'ABC' : ws.sample, k:'ABC', w:1.5, title:`Back to the ${ws.label} keyboard`},
+    ...IPA_PAGES.map(g => ({
+      l: g.label, k: `IPAPage:${g.id}`, w: (IPA_PER_ROW - 1.5) / IPA_PAGES.length,
+      title: `IPA: ${g.label}`, on: g.id === group.id,
+    })),
+  ];
+  const rows = [tabs];
+  const judged = group.impossible ? ' (judged impossible)' : '';
+  for (let i = 0; i < group.symbols.length; i += IPA_PER_ROW) {
+    const row = group.symbols.slice(i, i + IPA_PER_ROW)
+      .map(({ sym, name }) => ({
+        l: ipaKeyLabel(sym), k: sym, title: `${sym} — ${name}${judged}`, ipa: true, impossible: !!group.impossible,
+      }));
+    // Pad a short last row so its keys stay the same width as the rows above.
+    if (row.length < IPA_PER_ROW) row.push({ spacer: true, w: IPA_PER_ROW - row.length });
+    rows.push(row);
+  }
+  rows.push([
+    {l:'←',k:'ArrowLeft',w:1.5},{l:'→',k:'ArrowRight',w:1.5},
+    {l:'⌫',k:'Backspace',w:1.5},
+    {l:'space',k:' ',w:8.5}, {l:'↵eval',k:'Eval',w:2},
+  ]);
+  return rows;
+}
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let _shift        = false;
@@ -111,6 +261,18 @@ let _visible      = false;
 // and prejoin screen too and tickKbdUi() must not retract it.
 let _standalone   = false;
 let _collapsed    = false;
+// null = the current writing system's rows; otherwise the id of the IPA page
+// on show.
+let _ipaPage      = null;
+// The writing system (writing-systems-core.js id), its page on show (null =
+// the first), and whether the 🌐 menu is open.
+let _system       = _loadSystem();
+let _sysPage      = null;
+let _menuOpen     = false;
+// Where the caret sat after the last Hangul jamo this keyboard typed — the
+// next jamo only composes into that syllable if the caret has not moved.
+let _composeAt    = -1;
+let _composeTA    = null;
 let _lastTA       = null;
 let _dwellEl      = null;
 let _dwellStart   = 0;
@@ -240,11 +402,125 @@ function _renderModState() {
 
 // ── Typing ─────────────────────────────────────────────────────────────────────
 function _activateKeyDef(kd) {
+  if (kd.emojiName && _emojiDeleteMode) {
+    removeEmoji(kd.emojiName)
+      .then(() => { _flashTitle(`Deleted ${shortcode(kd.emojiName)}`); _rerenderIfEmoji(); })
+      .catch(e => _flashTitle(e.message || 'Could not delete that emoji'));
+    return;
+  }
   const upper = _shift || _caps;
   _typeKey((upper && kd.s) ? kd.s : kd.k);
 }
 
+function _currentRows() {
+  if (_ipaPage) return _ipaRows(_ipaPage);
+  return _system === DEFAULT_SYSTEM ? ROWS : _scriptRows();
+}
+
+// ── Writing systems ─────────────────────────────────────────────────────────────
+function _loadSystem() {
+  try {
+    const id = localStorage.getItem(SYSTEM_STORAGE_KEY);
+    if (id && WRITING_SYSTEMS.some(ws => ws.id === id)) return id;
+  } catch { /* storage blocked — Latin it is */ }
+  return DEFAULT_SYSTEM;
+}
+
+function _panelTitle() {
+  if (_ipaPage) return 'IPA keyboard';
+  return _system === DEFAULT_SYSTEM ? 'keyboard' : `keyboard · ${writingSystem(_system).label}`;
+}
+
+function _setMenuOpen(on) {
+  _menuOpen = on;
+  const panel = document.getElementById(KBD_PANEL_ID);
+  if (!panel) return;
+  panel.querySelector('.ts-kbd-menu')?.classList.toggle('ts-kbd-menu-on', on);
+  panel.querySelectorAll('.ts-kbd-key[data-k="Globe"]').forEach(el => el.classList.toggle('ts-kbd-mod-on', on));
+}
+
+// Switch the keyboard to writing system `id` (null just closes the menu).
+function _chooseSystem(id) {
+  if (id && WRITING_SYSTEMS.some(ws => ws.id === id)) {
+    _system  = id;
+    _sysPage = null;
+    _shift   = false;
+    _composeAt = -1;
+    try { localStorage.setItem(SYSTEM_STORAGE_KEY, id); } catch { /* per-session only */ }
+    _setIpaPage(null);
+    const panel = document.getElementById(KBD_PANEL_ID);
+    panel?.querySelectorAll('.ts-kbd-menu-opt').forEach(el =>
+      el.classList.toggle('ts-kbd-mod-on', el.dataset.system === id));
+  }
+  _setMenuOpen(false);
+}
+
+function _setSysPage(id) {
+  _sysPage = id;
+  _shift   = false;
+  const panel = document.getElementById(KBD_PANEL_ID);
+  if (!panel) return;
+  _renderRows(panel.querySelector('.ts-kbd-body'));
+  _renderModState();
+}
+
+// Caret stops. Arrows move by user-perceived character (a conjunct, a flag,
+// a family emoji); Backspace removes one code point — undoing the last vowel
+// sign of a conjunct, as every Indic keyboard does — except across an emoji,
+// which goes whole rather than leaving a stray joiner or half a flag.
+const _segmenter = (typeof Intl !== 'undefined' && Intl.Segmenter)
+  ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+
+function _cluster(val, i) {
+  return _segmenter ? _segmenter.segment(val).containing(i) : null;
+}
+
+function _codePointBefore(val, pos) {
+  const c = val.charCodeAt(pos - 1);
+  return (c >= 0xDC00 && c <= 0xDFFF && pos >= 2) ? pos - 2 : pos - 1;
+}
+
+function _backspaceStop(val, pos) {
+  if (pos <= 0) return 0;
+  const seg = _cluster(val, pos - 1);
+  if (seg && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(seg.segment)) return seg.index;
+  return _codePointBefore(val, pos);
+}
+
+function _leftStop(val, pos) {
+  if (pos <= 0) return 0;
+  const seg = _cluster(val, pos - 1);
+  return seg ? seg.index : _codePointBefore(val, pos);
+}
+
+function _rightStop(val, pos) {
+  if (pos >= val.length) return val.length;
+  const seg = _cluster(val, pos);
+  if (seg) return seg.index + seg.segment.length;
+  const c = val.charCodeAt(pos);
+  return (c >= 0xD800 && c <= 0xDBFF) ? pos + 2 : pos + 1;
+}
+
+function _setIpaPage(page) {
+  _ipaPage = page;
+  const panel = document.getElementById(KBD_PANEL_ID);
+  if (!panel) return;
+  panel.classList.toggle('ts-kbd-ipa', !!page);
+  panel.dataset.system = page ? 'ipa' : _system;
+  const title = panel.querySelector('.ts-kbd-title');
+  if (title) title.textContent = _panelTitle();
+  _renderRows(panel.querySelector('.ts-kbd-body'));
+  _renderModState();
+}
+
 function _typeKey(key) {
+  if (key === 'IPA') { _setMenuOpen(false); _setIpaPage(IPA_PAGES[0].id); return; }
+  if (key === 'ABC') { _setIpaPage(null); return; }
+  if (key.startsWith('IPAPage:')) { _setIpaPage(key.slice('IPAPage:'.length)); return; }
+  if (key === 'Globe') { _setMenuOpen(!_menuOpen); return; }
+  if (key === 'EmojiUpload') { _fileInput?.click(); return; }
+  if (key === 'EmojiDelete') { _emojiDeleteMode = !_emojiDeleteMode; _rerenderIfEmoji(); return; }
+  if (key.startsWith('SysPage:')) { _setSysPage(key.slice('SysPage:'.length)); return; }
   if (key === 'CapsLock') { _caps = !_caps; _renderModState(); return; }
   if (key === 'ShiftLeft' || key === 'ShiftRight') { _shift = !_shift; _renderModState(); return; }
 
@@ -276,14 +552,18 @@ function _typeKey(key) {
   const val = ta.value;
 
   const isTextarea = ta.tagName === 'TEXTAREA';
+  // Any key but another jamo ends a Hangul syllable in progress.
+  const composeFrom = (_composeTA === ta && s === e) ? _composeAt : -1;
+  _composeAt = -1;
 
   if (key === 'Backspace') {
     if (s !== e) {
       _setNativeValue(ta, val.slice(0, s) + val.slice(e));
       ta.setSelectionRange(s, s);
     } else if (s > 0) {
-      _setNativeValue(ta, val.slice(0, s - 1) + val.slice(s));
-      ta.setSelectionRange(s - 1, s - 1);
+      const from = _backspaceStop(val, s);
+      _setNativeValue(ta, val.slice(0, from) + val.slice(s));
+      ta.setSelectionRange(from, from);
     }
   } else if (key === 'Enter') {
     if (isTextarea) {
@@ -312,14 +592,25 @@ function _typeKey(key) {
       ta.setSelectionRange(s + 2, s + 2);
     }
   } else if (key === 'ArrowLeft') {
-    const p = Math.max(0, s - 1); ta.setSelectionRange(p, p);
+    const p = _leftStop(val, s); ta.setSelectionRange(p, p);
   } else if (key === 'ArrowRight') {
-    const p = Math.min(val.length, e + 1); ta.setSelectionRange(p, p);
+    const p = _rightStop(val, e); ta.setSelectionRange(p, p);
   } else if (key === 'ArrowUp' || key === 'ArrowDown') {
     if (isTextarea) _moveLine(ta, key === 'ArrowUp' ? -1 : 1);
-  } else if (key.length === 1) {
-    _setNativeValue(ta, val.slice(0, s) + key + val.slice(e));
-    ta.setSelectionRange(s + 1, s + 1);
+  } else if (key) {
+    // A key types its whole string: one letter, a conjunct, an astral-plane
+    // letter (Osage), or an emoji sequence.
+    let start = s;
+    let text  = key;
+    const hangul = !_ipaPage && writingSystem(_system).compose === 'hangul';
+    if (hangul && composeFrom === s && s > 0) {
+      const joined = composeHangul(val[s - 1], key);
+      if (joined != null) { start = s - 1; text = joined; }
+    }
+    _setNativeValue(ta, val.slice(0, start) + text + val.slice(e));
+    const p = start + text.length;
+    ta.setSelectionRange(p, p);
+    if (hangul) { _composeAt = p; _composeTA = ta; }
     if (_shift) { _shift = false; _renderModState(); }
   }
 
@@ -473,7 +764,8 @@ function _buildPanel() {
 
   const title = document.createElement('span');
   title.className = 'ts-kbd-title';
-  title.textContent = 'keyboard';
+  title.textContent = _panelTitle();
+  panel.dataset.system = _system;
 
   const collapseBtn = document.createElement('button');
   collapseBtn.className = 'ts-kbd-collapse-btn';
@@ -505,33 +797,35 @@ function _buildPanel() {
   predRow.className = 'ts-kbd-pred-row';
   body.appendChild(predRow);
 
-  ROWS.forEach((row, ri) => {
-    const rowEl = document.createElement('div');
-    rowEl.className = 'ts-kbd-row';
-    row.forEach((kd, ki) => {
-      const btn = document.createElement('button');
-      btn.className    = 'ts-kbd-key';
-      btn.type         = 'button';
-      btn.dataset.k    = kd.k;
-      btn.dataset.row  = ri;
-      btn.dataset.key  = ki;
-      // Width in flex units; the stylesheet reads --tsk-flex (see the .ts-kbd-key
-      // rule) so no element styles are written here.
-      if (kd.w) btn.style.setProperty('--tsk-flex', String(kd.w));
-      if (kd.s) {
-        btn.dataset.lower        = kd.l;
-        btn.dataset.shiftedLabel = kd.s;
-      }
-      const label = document.createElement('span');
-      label.className   = 'ts-kbd-label';
-      label.textContent = kd.l;
-      btn.appendChild(label);
-      btn.addEventListener('mousedown', e => e.preventDefault());
-      btn.addEventListener('click', () => { _activateKeyDef(kd); _flash(btn); });
-      rowEl.appendChild(btn);
-    });
-    body.appendChild(rowEl);
+  _renderRows(body);
+  body.appendChild(_buildMenu());
+
+  // Emoji upload: a hidden picker for the ＋ key, and image files dropped
+  // anywhere on the keyboard.
+  _fileInput = document.createElement('input');
+  _fileInput.type = 'file';
+  _fileInput.accept = EMOJI_MIMES.join(',');
+  _fileInput.multiple = true;
+  _fileInput.hidden = true;
+  _fileInput.addEventListener('change', () => { _uploadEmoji(_fileInput.files); _fileInput.value = ''; });
+  panel.appendChild(_fileInput);
+  panel.addEventListener('dragover', (e) => {
+    if ([...(e.dataTransfer?.items || [])].some(it => it.kind === 'file')) {
+      e.preventDefault();
+      panel.classList.add('ts-kbd-dropping');
+    }
   });
+  panel.addEventListener('dragleave', (e) => {
+    if (!panel.contains(e.relatedTarget)) panel.classList.remove('ts-kbd-dropping');
+  });
+  panel.addEventListener('drop', (e) => {
+    panel.classList.remove('ts-kbd-dropping');
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    _uploadEmoji(e.dataTransfer.files);
+  });
+  initCustomEmoji().then(_rerenderIfEmoji);
+  subscribeCustomEmoji(_rerenderIfEmoji);
 
   panel.appendChild(body);
 
@@ -548,6 +842,91 @@ function _buildPanel() {
   // Head-cursor move/resize: ✥ / ⇲ buttons in the header, same as Studio and
   // the facial-control panel. Mouse drag/resize above stays as it was.
   attachHeadDragResize(panel, { handle: header, minW: MIN_W, minH: MIN_H });
+}
+
+// The 🌐 menu: one entry per writing system, laid over the keys. Entries are
+// dwell targets like keys (see _dwellTick), and the first one closes it.
+function _buildMenu() {
+  const menu = document.createElement('div');
+  menu.className = 'ts-kbd-menu';
+  const entries = [{ id: '', label: 'Close', sample: '✕' }, ...WRITING_SYSTEMS];
+  for (const ws of entries) {
+    const opt = document.createElement('button');
+    opt.type = 'button';
+    opt.className = 'ts-kbd-menu-opt';
+    opt.dataset.system = ws.id;
+    opt.title = ws.id ? `Type in ${ws.label}` : 'Close this menu';
+    if (ws.id === _system) opt.classList.add('ts-kbd-mod-on');
+    const sample = document.createElement('span');
+    sample.className = 'ts-kbd-menu-sample';
+    sample.textContent = ws.sample;
+    const label = document.createElement('span');
+    label.className = 'ts-kbd-menu-label';
+    label.textContent = ws.label;
+    opt.append(sample, label);
+    opt.addEventListener('mousedown', e => e.preventDefault());
+    opt.addEventListener('click', () => _chooseSystem(opt.dataset.system || null));
+    menu.appendChild(opt);
+  }
+  return menu;
+}
+
+// (Re)build the key rows for the current layout. The prediction row above
+// them and the 🌐 menu are left alone, so switching layouts keeps their place.
+function _renderRows(body) {
+  if (!body) return;
+  body.querySelectorAll('.ts-kbd-row').forEach(el => el.remove());
+  const menu = body.querySelector('.ts-kbd-menu');
+  _currentRows().forEach((row, ri) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'ts-kbd-row';
+    row.forEach((kd, ki) => {
+      if (kd.spacer) {
+        const gap = document.createElement('div');
+        gap.className = 'ts-kbd-spacer';
+        if (kd.text) { gap.classList.add('ts-kbd-hint'); gap.textContent = kd.text; }
+        gap.style.setProperty('--tsk-flex', String(kd.w));
+        rowEl.appendChild(gap);
+        return;
+      }
+      const btn = document.createElement('button');
+      btn.className    = 'ts-kbd-key';
+      btn.type         = 'button';
+      btn.dataset.k    = kd.k;
+      btn.dataset.row  = ri;
+      btn.dataset.key  = ki;
+      if (kd.title) btn.title = kd.title;
+      if (kd.ipa) btn.classList.add('ts-kbd-ipa-key');
+      if (kd.impossible) btn.classList.add('ts-kbd-impossible-key');
+      if (kd.script) btn.classList.add('ts-kbd-script-key');
+      if (kd.on || (kd.k === 'Globe' && _menuOpen)) btn.classList.add('ts-kbd-mod-on');
+      // Width in flex units; the stylesheet reads --tsk-flex (see the .ts-kbd-key
+      // rule) so no element styles are written here.
+      if (kd.w) btn.style.setProperty('--tsk-flex', String(kd.w));
+      if (kd.s) {
+        btn.dataset.lower        = kd.l;
+        btn.dataset.shiftedLabel = kd.s;
+      }
+      const label = document.createElement('span');
+      label.className   = 'ts-kbd-label';
+      if (kd.img) {
+        const img = document.createElement('img');
+        img.className = 'ts-kbd-emoji-img';
+        img.src = kd.img;
+        img.alt = kd.k;
+        label.appendChild(img);
+        btn.classList.add('ts-kbd-own-emoji');
+        if (_emojiDeleteMode) btn.classList.add('ts-kbd-deleting');
+      } else {
+        label.textContent = kd.l;
+      }
+      btn.appendChild(label);
+      btn.addEventListener('mousedown', e => e.preventDefault());
+      btn.addEventListener('click', () => { _activateKeyDef(kd); _flash(btn); });
+      rowEl.appendChild(btn);
+    });
+    body.insertBefore(rowEl, menu);
+  });
 }
 
 function _flash(el) {
@@ -592,7 +971,19 @@ function _dwellTick() {
     return;
   }
 
+  // Only the visible head cursor dwells. In MediaPipe's watch-only state (the
+  // camera up just to catch the enable gesture) faceCtx still follows the
+  // face, and without this an invisible point drifting over the keys pressed
+  // them.
   const ctx = window.faceCtx;
+  if (!isHeadCursorEnabled()) {
+    if (_dwellEl) {
+      _dwellEl.style.setProperty('--dwell', '0');
+      _dwellEl.classList.remove('ts-kbd-dwelling');
+      _dwellEl = null;
+    }
+    return;
+  }
   if (!ctx || (ctx.cursorX === window.innerWidth / 2 && ctx.cursorY === window.innerHeight / 2)) return;
 
   const panel = document.getElementById(KBD_PANEL_ID);
@@ -602,8 +993,12 @@ function _dwellTick() {
   const cy = ctx.cursorY;
   let hoveredEl = null;
 
-  // Detect over keys, predictions, and the collapse button.
-  for (const el of panel.querySelectorAll('.ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn, .ts-kbd-close-btn')) {
+  // Detect over keys, predictions, and the collapse button — or, while the 🌐
+  // menu covers the keys, over its entries instead.
+  const targets = _menuOpen
+    ? '.ts-kbd-menu-opt, .ts-kbd-collapse-btn, .ts-kbd-close-btn'
+    : '.ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn, .ts-kbd-close-btn';
+  for (const el of panel.querySelectorAll(targets)) {
     const r = el.getBoundingClientRect();
     if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
       hoveredEl = el; break;
@@ -648,9 +1043,14 @@ function _activateDwelled(el) {
     _insertCompletion(el.dataset.completion);
     return;
   }
+  if (el.classList.contains('ts-kbd-menu-opt')) {
+    _chooseSystem(el.dataset.system || null);
+    return;
+  }
   const ri = parseInt(el.dataset.row);
   const ki = parseInt(el.dataset.key);
-  if (!isNaN(ri) && !isNaN(ki)) _activateKeyDef(ROWS[ri][ki]);
+  const kd = _currentRows()[ri]?.[ki];
+  if (kd && !kd.spacer) _activateKeyDef(kd);
 }
 
 // ── Meeting visibility ──────────────────────────────────────────────────────────

@@ -11,7 +11,9 @@
 // Composition model (the one the parser's tables mirror): exactly ONE shape
 // command is live at a time — last wins, like `# mosaic` re-typed — while
 // skybox, particle2, particle3, tiling, tessellation and background are
-// independent layers that stack with the shape and with each other. Every
+// independent layers that stack with the shape and with each other, and
+// camera3d / controls3d / lighting3d set how any three.js layer is viewed
+// and lit (each last-wins, like the shape). Every
 // directive here is media-gated, so `# tetrahedron … ["audio"]` leaves the
 // picture alone exactly as `# room … ["audio"]` does.
 //
@@ -20,7 +22,7 @@
 // and under node:test.
 
 import {
-  THREE_SHAPES, P5_SHAPES, TILING_MODES
+  THREE_SHAPES, P5_SHAPES, TILING_MODES, CONTROLS3D_MODES, LIGHTING3D_MODES
 } from '../MetaprogrammerParser.js';
 import { evaluateValuePattern, isValuePattern } from '../ValuePattern.js';
 import { entryAffects } from '../EffectMedia.js';
@@ -33,6 +35,23 @@ export const PARTICLE3_DEFAULTS = { count: 1500, size: 2.5, speed: 1 };
 export const TESSELLATION_DEFAULTS = { cols: 4, rows: 3, spin: 0.35 };
 export const TILING_DEFAULT_COUNT = 3;
 export const SKYBOX_DEFAULT_FOV = 80;
+// The camera as three.js would leave it: straight on, level, auto-fit, the
+// stage's 50° lens. Degrees throughout (see CAMERA3D_SLOTS in the parser).
+export const CAMERA3D_DEFAULTS = { azimuth: 0, polar: 90, zoom: 1, fov: 50, roll: 0 };
+// Speed is turns (or loops) per cycle — one lap every 8 cycles by default, so
+// a camera move reads as a phrase rather than a spin. `amount` is per mode:
+// orbit's polar swing and trackball's axis tilt in degrees, map's pan reach
+// and fly's dive depth as fractions of the view.
+export const CONTROLS3D_DEFAULTS = {
+  orbit: { speed: 0.125, amount: 20 },
+  trackball: { speed: 0.125, amount: 35 },
+  map: { speed: 0.125, amount: 0.35 },
+  fly: { speed: 0.125, amount: 0.6 },
+};
+const CONTROLS3D_AMOUNT_MAX = { orbit: 80, trackball: 90, map: 2, fly: 0.95 };
+// Intensity 1 shows the frame at full brightness where the key light hits it
+// square on; the key comes from the upper right front.
+export const LIGHTING3D_DEFAULTS = { intensity: 1, azimuth: 45, polar: 45, spin: 0, color: '#ffffff' };
 
 // Ceilings, same rationale as VideoState's: past these a setting stops
 // reading as the intended picture and starts reading as a broken stream —
@@ -53,6 +72,9 @@ export function neutralOutputState() {
     particle3: null,
     tessellation: null,
     background: null,
+    camera3d: null,
+    controls3d: null,
+    lighting3d: null,
   };
 }
 
@@ -78,10 +100,25 @@ function group(values, cyclePos) {
   return (values || []).map((v) => param(v, cyclePos));
 }
 
-// A resolved background, or null. Colors pattern per cycle through the same
-// value-pattern reader numeric arguments use (quoted strings pass through it
-// untouched), so `# background "gradient" <"#f00" "#00f"> "#000" 45` cross-
-// fades its first color once per cycle.
+// One color at this point on the cycle: a literal, or a color pattern whose
+// terms are quoted strings, sampled per cycle by the same reader that samples
+// numeric arguments (strings pass through it as scalars on the terms it lands
+// on). A rest or anything unreadable is the fallback.
+function colorAt(c, cyclePos, fallback) {
+  if (typeof c === 'string') return c;
+  if (isValuePattern(c) || (c && c.type === 'dataRef')) {
+    const v = evaluateValuePattern(c, cyclePos);
+    return typeof v === 'string' ? v : fallback;
+  }
+  return fallback;
+}
+
+// Degrees folded into [0, 360) — azimuths and rolls wrap rather than clamp.
+const wrapDegrees = (v) => ((v % 360) + 360) % 360;
+
+// A resolved background, or null. Colors pattern per cycle through colorAt,
+// so `# background "gradient" <"#f00" "#00f"> "#000" 45` cross-fades its first
+// color once per cycle.
 function backgroundState(bg, cyclePos) {
   if (!bg) return null;
   if (bg.mode === 'image') {
@@ -89,17 +126,7 @@ function backgroundState(bg, cyclePos) {
     // page validates it by loading it (a dead URL leaves the base color).
     return { type: 'image', url: typeof bg.url === 'string' ? bg.url : null };
   }
-  const color = (c, fallback) => {
-    if (typeof c === 'string') return c;
-    // A color pattern: its terms are quoted strings, sampled per cycle by the
-    // same reader that samples numeric arguments (strings pass through it as
-    // scalars on the terms it lands on).
-    if (isValuePattern(c) || (c && c.type === 'dataRef')) {
-      const v = evaluateValuePattern(c, cyclePos);
-      return typeof v === 'string' ? v : fallback;
-    }
-    return fallback;
-  };
+  const color = (c, fallback) => colorAt(c, cyclePos, fallback);
   if (bg.mode === 'gradient') {
     return {
       type: 'gradient',
@@ -179,6 +206,47 @@ export function outputStateFor(chainEntries, cycle = {}) {
         state.background = backgroundState(entry.background, cyclePos);
         break;
       }
+      case 'camera3d': {
+        const D = CAMERA3D_DEFAULTS;
+        const [azimuth, polar, zoom, fov, roll] = group(entry.args && entry.args[0], cyclePos);
+        state.camera3d = {
+          azimuth: azimuth == null ? D.azimuth : wrapDegrees(azimuth),
+          // Off the poles: a camera looking exactly along its up vector has
+          // no defined orientation.
+          polar: polar == null ? D.polar : clamp(polar, 1, 179),
+          zoom: zoom == null ? D.zoom : clamp(zoom, 0.05, 20),
+          fov: fov == null ? D.fov : clamp(fov, 10, 120),
+          roll: roll == null ? D.roll : wrapDegrees(roll),
+        };
+        break;
+      }
+      case 'controls3d': {
+        const mode = CONTROLS3D_MODES.includes(entry.mode) ? entry.mode : null;
+        if (!mode || mode === 'none') { state.controls3d = null; break; }
+        const D = CONTROLS3D_DEFAULTS[mode];
+        const [speed, amount] = group(entry.args && entry.args[0], cyclePos);
+        state.controls3d = {
+          mode,
+          speed: speed == null ? D.speed : clamp(speed, 0, 8),
+          amount: amount == null ? D.amount : clamp(amount, 0, CONTROLS3D_AMOUNT_MAX[mode]),
+        };
+        break;
+      }
+      case 'lighting3d': {
+        const mode = LIGHTING3D_MODES.includes(entry.mode) ? entry.mode : null;
+        if (!mode || mode === 'none') { state.lighting3d = null; break; }
+        const D = LIGHTING3D_DEFAULTS;
+        const [intensity, azimuth, polar, spin] = group(entry.args && entry.args[0], cyclePos);
+        state.lighting3d = {
+          mode,
+          intensity: intensity == null ? D.intensity : clamp(intensity, 0, 10),
+          azimuth: azimuth == null ? D.azimuth : wrapDegrees(azimuth),
+          polar: polar == null ? D.polar : clamp(polar, 0, 180),
+          spin: spin == null ? D.spin : clamp(spin, 0, 8),
+          color: colorAt(entry.color, cyclePos, D.color),
+        };
+        break;
+      }
       default: {
         // The shape commands. One slot, last wins.
         const family = entry.fn in THREE_SHAPES ? 'three'
@@ -209,12 +277,17 @@ export function outputStageActive(state) {
 
 // Which libraries the stage needs for this state, so the page (and the
 // diagnostics) can tell a three.js skybox from a p5 square. `background`
-// alone needs neither — it is a 2D fill around whatever else is there.
+// alone needs neither — it is a 2D fill around whatever else is there — and
+// nor do camera3d / controls3d / lighting3d, which only shape a three.js
+// scene something else asked for. Tessellation follows the shape: a 3D
+// shape's honeycomb is three.js, a 2D shape's tiling and the shapeless quilt
+// are p5.
 export function outputStageLibraries(state) {
   if (!outputStageActive(state)) return { three: false, p5: false };
   const s = state.shape;
+  const threeShape = !!(s && s.family === 'three');
   return {
-    three: !!(state.skybox || state.particle3 || (s && s.family === 'three')),
-    p5: !!(state.particle2 || state.tessellation || (s && s.family === 'p5')),
+    three: !!(state.skybox || state.particle3 || threeShape),
+    p5: !!(state.particle2 || (state.tessellation && !threeShape) || (s && s.family === 'p5')),
   };
 }

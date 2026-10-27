@@ -20,12 +20,13 @@
 // as a placeholder token with the real name and its authoring peer carried
 // in an atom table set by strudel.js before each evaluate.
 
-import { getPeerByJitsiId, getLocalPeer, isPeerJPatternTurn, sendChatFile, subscribePeerState } from './peer-state.js';
+import { getPeerByJitsiId, getLocalPeer, getAllPeers, isPeerJPatternTurn, sendChatFile, subscribePeerState } from './peer-state.js';
 import { localToken } from './polls.js';
-import { FILE_KINDS, mimeOfFilename, validateUpload } from './file-cycles-core.js';
+import { FILE_KINDS, MAX_FILE_BYTES, mimeOfFilename, validateUpload } from './file-cycles-core.js';
 import { req } from './user-samples.js';
 export { req } from './user-samples.js';
 import { ensureChatEntry } from './chat-entry.js';
+import { silentRenderer } from './multimedia-core.js';
 
 
 const CONTAINER_ID = 'trussal-file-cycles';
@@ -121,6 +122,11 @@ function getLocalFile(name) {
   });
 }
 
+// One of this browser's own uploads, as { name, kind, mime, blob }, or null.
+// backing.js reads the same store: a backing file is uploaded through the
+// same Files picker as an attachment.
+export { getLocalFile as getUploadedFile };
+
 export async function clearFilesDB() {
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !('indexedDB' in window)) { resolve(); return; }
@@ -145,7 +151,7 @@ const inFlight = new Map();  // name -> Promise, so two haps racing the same
                               // filename before the first resolves don't both
                               // read IDB and both broadcast.
 
-function blobToBase64(blob) {
+export function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(String(reader.result).split(',')[1] || '');
@@ -180,6 +186,20 @@ function loadAndBroadcastOwn(name) {
 
 subscribePeerState((event, payload) => {
   if (event !== 'chat-file') return;
+  // A one-shot post (postChatFile) renders on arrival: there is no pattern
+  // on this side to trigger it. Its bytes are not cached by name — a posted
+  // file is not one the author's patterns address.
+  if (payload.post) {
+    try {
+      const bytes = Uint8Array.from(atob(payload.data), (c) => c.charCodeAt(0));
+      const record = { blob: new Blob([bytes], { type: payload.mime }), mime: payload.mime, kind: payload.kind };
+      const author = getAllPeers().find((p) => String(p.roomIndex) === String(payload.fromIndex));
+      renderBubble(payload.name, record, null, { label: author?.displayName || payload.name, force: true });
+    } catch (e) {
+      console.error('[file-cycles] could not decode a posted attachment', e);
+    }
+    return;
+  }
   // Our own upload already went straight into `received` when we broadcast
   // it — a remote peer's file is what actually needs this path.
   if (received.has(payload.name)) return;
@@ -190,6 +210,24 @@ subscribePeerState((event, payload) => {
     console.error('[file-cycles] could not decode a received attachment', e);
   }
 });
+
+// Post one file into the meeting chat right now, from this participant, on
+// every browser in the room — the meeting prebake's chat attachments
+// (meeting-prebake.js). Unlike a pattern-triggered attachment, this needs no
+// upload, no pattern and no turn: the bytes go out once with `post` set, and
+// each receiver renders the bubble on arrival.
+export async function postChatFile({ name, kind, mime, blob }) {
+  if (!name || !blob || !FILE_KINDS[kind]) return false;
+  if (blob.size > MAX_FILE_BYTES) {
+    console.warn(`[file-cycles] "${name}" is over the 10MB limit, not posted`);
+    return false;
+  }
+  const type = mime || blob.type || mimeOfFilename(name);
+  const record = { blob, mime: type, kind };
+  renderBubble(name, record, getLocalPeer()?.jitsiId ?? null, { force: true });
+  sendChatFile({ kind, name, mime: type, data: await blobToBase64(blob), post: true });
+  return true;
+}
 
 // --- chat rendering ----------------------------------------------------------
 
@@ -235,7 +273,10 @@ function mediaElementFor(kind, url, name, mime) {
   return a;
 }
 
-function renderBubble(name, record, peerId) {
+// `force` attaches the container even while File Cycles is not running (a
+// one-shot post has no voice to start it); `label` names the author when the
+// caller knows them by room index rather than by Jitsi id.
+function renderBubble(name, record, peerId, { label: labelText = null, force = false } = {}) {
   ensureContainer();
   const bubble = document.createElement('div');
   bubble.className = 'fc-bubble';
@@ -243,13 +284,13 @@ function renderBubble(name, record, peerId) {
   const label = document.createElement('div');
   label.className = 'fc-name';
   const peer = peerId ? getPeerByJitsiId(peerId) : null;
-  label.textContent = peer?.displayName || name;
+  label.textContent = labelText || peer?.displayName || name;
   bubble.appendChild(label);
 
   const url = URL.createObjectURL(record.blob);
   bubble.appendChild(mediaElementFor(record.kind, url, name, record.mime));
 
-  ensureChatEntry(container, localToken(), () => active);
+  ensureChatEntry(container, localToken(), () => active || force);
   container.appendChild(bubble);
   bubbleCount++;
   while (bubbleCount > MAX_BUBBLES && container.firstChild) {
@@ -307,7 +348,7 @@ export function installFileCycles(mod) {
   for (const kind of Object.keys(FILE_KINDS)) {
     Object.assign(scope, registerControl(kind));
   }
-  register('_fcRender', (pat) => pat.onTrigger(handleTrigger, true));
+  register('_fcRender', silentRenderer(handleTrigger, 'file'));
 
   scope.initFileCycles = async () => {
     const wasActive = active;

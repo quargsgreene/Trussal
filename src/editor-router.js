@@ -93,7 +93,8 @@ export function applyMetaprogramNow() {
 }
 
 // JPatternButton dwell/click target: toggle the declared statement in the
-// shared doc and apply. Mirrors toggleButtonCode for the personal editor.
+// shared doc and apply. The personal editor's counterpart is studio.js
+// pressVoiceButton.
 // Returns the parse errors of the resulting program — a button can produce an
 // invalid one (removing the last participant empties the sequence), and the
 // caller shows them rather than letting the press look like it did nothing.

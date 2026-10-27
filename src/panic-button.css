@@ -1,0 +1,30 @@
+/* panic-button.css — the breakout-room panic button (src/panic-button.js)
+   and the room-wide notice every browser shows when someone presses it
+   (src/breakout.js). Fixed alarm red rather than themed: it has to read as
+   an escape hatch whatever CSS Cycles has done to the rest of the page. */
+
+#trussal-panic-button {
+  position: fixed; right: 24px; bottom: 24px; z-index: 2147483000;
+  padding: 12px 18px; border: 2px solid #ffffff; border-radius: 999px;
+  background: #c62828; color: #ffffff;
+  font: 600 14px/1.2 system-ui, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+  cursor: pointer;
+}
+#trussal-panic-button:hover { background: #b71c1c; }
+#trussal-panic-button:focus-visible { outline: 3px solid #ffeb3b; outline-offset: 2px; }
+#trussal-panic-button:disabled { opacity: .7; cursor: progress; }
+#trussal-panic-button[hidden] { display: none; }
+
+#trussal-panic-notices {
+  position: fixed; right: 24px; bottom: 84px; z-index: 2147483000;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  max-width: min(360px, calc(100vw - 48px));
+  pointer-events: none;
+}
+#trussal-panic-notices .panic-notice {
+  padding: 10px 14px; border-left: 4px solid #c62828; border-radius: 6px;
+  background: #111111; color: #ffffff;
+  font: 14px/1.35 system-ui, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+}

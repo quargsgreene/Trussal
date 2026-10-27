@@ -12,10 +12,10 @@
 // bots, how they are stratified, the health thresholds and grace periods. Keys
 // that decide WHERE the fleet connects or WHO it authenticates as (jitsiUrl,
 // jamulusServer, sidecarWsUrl, conductorPort, adminPort) are deliberately
-// absent, because the admin port and the in-room Conductor panel have no auth:
-// see the POST /api/config handler and FleetService's conductor-settings
-// request. A new endpoint key added to defaultConfig later is non-writable by
-// default, which is the safe direction to fail.
+// absent, because the admin port has no auth: see the POST /api/config
+// handler. The in-room Conductor panel is narrower still (ROOM_TUNABLE). A new
+// endpoint key added to defaultConfig later is non-writable by default, which
+// is the safe direction to fail.
 export const REMOTELY_TUNABLE = new Set([
   'maxBots', 'sessionSeed', 'varyHydra', 'roles', 'staggerSubdivisions',
   'fpsMin', 'memLimitMb', 'percentileCutoff', 'replaceLatencyFloorMs', 'replaceRamFloorMb',
@@ -23,6 +23,18 @@ export const REMOTELY_TUNABLE = new Set([
   'jitsiChannelLastN', 'jitsiVideoHeight', 'jitsiStartBitrateKbps', 'captureFps',
   'ownerLeaveGraceMs', 'meetingEndGraceMs',
   'aggregatorStartupGraceMs', 'aggregatorStaleMs', 'aggregatorBootDeadlineMs', 'jitsiJoinGraceMs',
+]);
+
+// The subset of REMOTELY_TUNABLE a MEETING may change, from its in-room
+// Conductor panel. These are held per room (FleetService's room state) and only
+// ever shape that room's own bots — how many it may run, how they are
+// stratified and varied, and the health thresholds its own cluster is judged
+// against. Everything else in REMOTELY_TUNABLE is fleet-wide (tick cadences,
+// grace periods, the session seed behind every bot's name, bandwidth caps), so
+// letting one meeting set it would change every other meeting: those stay on
+// the admin API only.
+export const ROOM_TUNABLE = new Set([
+  'maxBots', 'varyHydra', 'roles', 'fpsMin', 'memLimitMb',
 ]);
 
 export const defaultConfig = Object.freeze({

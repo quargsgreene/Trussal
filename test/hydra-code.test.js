@@ -31,6 +31,19 @@ test('hydra-code: normalization strips trailing noise and widget lines', () => {
   assert.equal(normalizePeerCode('*go: s("bd")\ns("sd")'), 's("sd")');
 });
 
+test('hydra-code: a widget declaration is stripped with its continuation lines', () => {
+  // A `.method` chain left behind would glue onto the voice above it.
+  assert.equal(
+    normalizePeerCode('$: s("bd")\n*btn: sound("piano:2")\n  .note("a4 b4")\n$: s("hh")'),
+    '$: s("bd")\n\n$: s("hh")'
+  );
+  // So would the rest of a call left open across lines.
+  assert.equal(
+    normalizePeerCode('*pad: stack(\n  s("bd"),\n  s("sd")\n)\n\ns("hh")'),
+    's("hh")'
+  );
+});
+
 
 test('hydra-code: a camera-fed preamble is detected', () => {
   assert.equal(usesExternalSource('await initHydra()\nsrc(s0).out()'), true);

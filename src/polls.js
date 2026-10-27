@@ -26,6 +26,7 @@ import {
   parsePollLiteral, canVote, applyVoteDelta, switchVote,
 } from './polls-core.js';
 import { ensureChatEntry } from './chat-entry.js';
+import { silentRenderer } from './multimedia-core.js';
 
 
 const CONTAINER_ID = 'trussal-polls';
@@ -225,7 +226,7 @@ export function installPolls(mod) {
     ...registerControl('close'),
     ...registerControl('vote'),
   };
-  register('_pollRender', (pat) => pat.onTrigger(handleTrigger, true));
+  register('_pollRender', silentRenderer(handleTrigger, 'poll'));
 
   scope.initPolls = async () => {
     const wasActive = active;

@@ -21,6 +21,7 @@
 
 import { getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
 import { imageUrlByFilename } from './user-samples.js';
+import { silentRenderer } from './multimedia-core.js';
 
 let currentSource = null; // the last name actually applied, so a repeated
                            // fire under fast()/degrade() is a no-op rather
@@ -78,7 +79,7 @@ function handleTrigger(hap, currentTime, cps, targetTime) {
 export function installPanelBg(mod) {
   const { registerControl, register } = mod;
   const scope = { ...registerControl('panel') };
-  register('_pbRender', (pat) => pat.onTrigger(handleTrigger, true));
+  register('_pbRender', silentRenderer(handleTrigger, 'panel'));
   return scope;
 }
 

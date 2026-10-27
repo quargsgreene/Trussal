@@ -39,7 +39,30 @@ const PACK_MAX_PACKS = 32;
 // client cannot push an unbounded payload into every other browser in the
 // meeting, the same reasoning as sanitizeDataPacks above.
 const CHAT_FILE_MAX_BYTES = 10 * 1024 * 1024;
-const CHAT_FILE_KINDS = new Set(['image', 'video', 'document', 'sound']);
+// The kinds src/file-cycles-core.js's FILE_KINDS names (textFile/pdfFile/
+// soundFile), plus the older 'document'/'sound' spellings an earlier bundle
+// may still send.
+const CHAT_FILE_KINDS = new Set(['image', 'video', 'textFile', 'pdfFile', 'soundFile', 'document', 'sound']);
+
+// A backing() file (src/backing-core.js) on its way to the aggregator, which
+// plays it. Kept on the room so an aggregator that (re)joins later still gets
+// it, so the room's total is capped too: past BACKING_MAX_FILES the oldest
+// file is dropped (its author's next reconnect re-sends it if still declared).
+const BACKING_KINDS = new Set(['audio', 'video']);
+const BACKING_MAX_FILES = 16;
+
+// A meeting prebake (src/meeting-prebake-core.js): the room's whole starting
+// setup as one JSON object, kept for the life of the room so every late joiner
+// is sent it too. Mirrors PREBAKE_MAX_BYTES there, which the client enforces
+// before upload; this is the same ceiling against a buggy or hostile client.
+const PREBAKE_MAX_BYTES = 64 * 1024 * 1024;
+
+// The No Code window (src/no-code-core.js): the room's snippet library and
+// its shared whiteboard, both kept for the life of the room so a late joiner
+// opens the same board. Mirrors NO_CODE_MAX_BYTES there; the board is a tree
+// of snippet ids, so it gets a far smaller ceiling.
+const NO_CODE_MAX_BYTES = 64 * 1024 * 1024;
+const NO_CODE_BOARD_MAX_BYTES = 256 * 1024;
 
 // Decoded byte length of a base64 string, without the cost of actually
 // decoding it (cheap enough to check unconditionally on every attachment).
@@ -47,6 +70,29 @@ function base64ByteLength(b64) {
   const len = b64.length;
   const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
   return Math.floor((len * 3) / 4) - padding;
+}
+
+// Uploaded emoji (src/custom-emoji-core.js): a name, an image type and its
+// base64 bytes, held on the uploader's record so late joiners get them in the
+// roster. Mirrors MAX_EMOJI / MAX_EMOJI_BYTES / EMOJI_MIMES there — the client
+// scales uploads down to fit, so an honest client never trips these.
+const EMOJI_MAX = 64;
+const EMOJI_MAX_BYTES = 64 * 1024;
+const EMOJI_MIMES = new Set(['image/png', 'image/gif', 'image/webp', 'image/jpeg']);
+
+function sanitizeCustomEmoji(list) {
+  if (!Array.isArray(list)) return null;
+  const seen = new Set();
+  const out = [];
+  for (const e of list) {
+    if (out.length >= EMOJI_MAX) break;
+    if (!e || typeof e.name !== 'string' || !/^[a-z0-9_]{1,32}$/.test(e.name) || seen.has(e.name)) continue;
+    if (!EMOJI_MIMES.has(e.mime) || typeof e.data !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(e.data)) continue;
+    if (base64ByteLength(e.data) > EMOJI_MAX_BYTES) continue;
+    seen.add(e.name);
+    out.push({ name: e.name, mime: e.mime, data: e.data });
+  }
+  return out;
 }
 
 function sanitizeDataPacks(packs) {
@@ -143,6 +189,13 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
   // subsumes and replaces the log. The meta record dies with the room.
   const roomMeta = new Map();
   const CRDT_LOG_MAX = 500; // hard cap; clients snapshot long before this
+  // Inhabited personal editors (src/inhabit.js): one Yjs doc per HOST token,
+  // its update log kept like crdtLog so a guest arriving mid-session catches
+  // up. Bounded per doc, per update, and in how many docs one room may hold.
+  const EDITOR_LOG_MAX = 200;
+  const EDITOR_DOCS_MAX = 256;
+  const EDITOR_UPDATE_MAX = 512 * 1024;
+  const INHABIT_RELAY_MAX = 256 * 1024;
 
   function getRoom(name) {
     let room = rooms.get(name);
@@ -156,7 +209,12 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
   function getRoomMeta(name) {
     let meta = roomMeta.get(name);
     if (!meta) {
-      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), lastActiveToken: null, lastActiveIndex: null, lastActiveKind: null };
+      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), lastActiveToken: null, lastActiveIndex: null, lastActiveKind: null, prebake: null, noCodeLibrary: null, noCodeBoard: null,
+        // `# inhabit` (src/inhabit-core.js): the guest → host map in force —
+        // what was reported, less every pair its host's permissionsConfig
+        // refuses — which aggregator connection is reporting it (null: none
+        // is), and each inhabited editor's CRDT log.
+        inhabit: {}, inhabitReported: {}, inhabitReporter: null, editorLogs: new Map() };
       roomMeta.set(name, meta);
     }
     return meta;
@@ -173,6 +231,16 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
   // reconnecting probe or its periodic renewals) and freed immediately by an
   // explicit release.
   const roomClaims = new Map();
+
+  // origin roomName -> Set of meeting names meeting() requests from it have
+  // named: where to relay its later requests so they reach the people it
+  // already moved. Its own map, like roomClaims, because the origin room
+  // may well empty out (everyone sent elsewhere) and still need it after.
+  const meetingSatellites = new Map();
+  const MAX_MEETING_SATELLITES = 32;
+  // The last meeting-move stamp handed out: stamps strictly increase, so two
+  // requests in the same millisecond still have an order.
+  let lastMeetingMoveAt = 0;
 
   // The room's live aggregator claim, or null once its lease has run out.
   function liveClaim(roomName, now = Date.now()) {
@@ -252,6 +320,140 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
     return String(meta.nextIndex++);
   }
 
+  // --- `# inhabit` -------------------------------------------------------------
+  //
+  // The map is resolved from the applied metaprogram each cycle by the
+  // aggregator (bots/src/bot/aggregator-bot.js) and reported here; with no
+  // aggregator in the room, a human browser that may edit the metaprogram
+  // reports the program's static map instead (they could have written any
+  // `# inhabit` line themselves). The relay never parses the program — it
+  // only holds the map, re-validates it with src/inhabit-core.js's rules, and
+  // uses it to decide who may talk to whom and with whose permissions.
+  const INHABIT_TOKEN_RE = /^\d+(?:z*[a-z])?$/;
+  const MAX_INHABIT_PAIRS = 200;
+  const INHABIT_GUEST_KINDS = new Set(['chat', 'route', 'join']);
+  const INHABIT_HOST_KINDS = new Set(['snapshot']);
+
+  function isInhabitToken(token) {
+    return typeof token === 'string' && token.length <= 32 && INHABIT_TOKEN_RE.test(token);
+  }
+
+  function sanitizeInhabitMap(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    let n = 0;
+    for (const [guest, host] of Object.entries(raw)) {
+      if (n >= MAX_INHABIT_PAIRS) break;
+      if (!isInhabitToken(guest) || !isInhabitToken(host) || guest === host) continue;
+      out[guest] = host;
+      n++;
+    }
+    return out;
+  }
+
+  function sameInhabitMap(a, b) {
+    const ka = Object.keys(a);
+    return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
+  }
+
+  function recordByIndex(room, token) {
+    if (!room || token == null) return null;
+    for (const r of room.values()) {
+      if (!r.isFleet && r.roomIndex != null && String(r.roomIndex) === String(token)) return r;
+    }
+    return null;
+  }
+
+  // A guest acts with its HOST's metaprogram permissions for as long as it is
+  // inside it: a bot inside a human may edit the program, a human inside a
+  // bot may not. Its own grants are untouched and come back when it leaves.
+  function permissionsOf(record) {
+    return record.effective || {
+      canEditMetaprogram: record.canEditMetaprogram,
+      canWriteModulation: record.canWriteModulation,
+    };
+  }
+
+  // Recompute every participant's effective permissions against the room's
+  // map, telling the room about each one that changed.
+  function refreshInhabitPermissions(roomName) {
+    const room = rooms.get(roomName);
+    if (!room) return;
+    const meta = roomMeta.get(roomName);
+    const map = meta ? meta.inhabit : {};
+    for (const r of room.values()) {
+      if (r.isFleet || r.roomIndex == null) continue;
+      const host = recordByIndex(room, map[String(r.roomIndex)]);
+      const next = host ? { canEditMetaprogram: host.canEditMetaprogram, canWriteModulation: host.canWriteModulation } : null;
+      if (JSON.stringify(next) === JSON.stringify(r.effective || null)) continue;
+      r.effective = next;
+      broadcast(room, null, { type: 'peer-update', peerId: r.peerId, patch: permissionsOf(r) });
+    }
+  }
+
+  // --- permissionsConfig (src/permissions-config.js) -----------------------
+  //
+  // What a participant's own editor says others may do with them, as their
+  // browser parsed it from what they announced. Re-validated here: the
+  // relay enforces allowInhabitFrom itself and shares the whole config with
+  // the room, whose browsers enforce allowClipping.
+  function sanitizePermissionsConfig(raw) {
+    const out = { allowInhabitFrom: 'all', allowClipping: true };
+    if (!raw || typeof raw !== 'object') return out;
+    const from = raw.allowInhabitFrom;
+    if (from === 'all' || from === 'none') out.allowInhabitFrom = from;
+    else if (Array.isArray(from) && from.length <= MAX_INHABIT_PAIRS && from.every((t) => isInhabitToken(t))) {
+      out.allowInhabitFrom = [...new Set(from)];
+    }
+    if (raw.allowClipping === false) out.allowClipping = false;
+    return out;
+  }
+
+  function allowsInhabitFrom(record, guestToken) {
+    const from = record && record.permissionsConfig ? record.permissionsConfig.allowInhabitFrom : 'all';
+    if (from === 'all') return true;
+    if (from === 'none') return false;
+    return Array.isArray(from) && from.includes(guestToken);
+  }
+
+  // The reported map less every pair a PRESENT host refuses. A host who is
+  // not here takes nobody in anyway; its config is applied when it returns.
+  function filterInhabitMap(room, reported) {
+    const out = {};
+    for (const [guest, host] of Object.entries(reported)) {
+      if (allowsInhabitFrom(recordByIndex(room, host), guest)) out[guest] = host;
+    }
+    return out;
+  }
+
+  // Recompute the map in force from the last report, telling the room when
+  // it moved: on every report, and whenever a host's config or presence
+  // changes what it lets through.
+  function applyInhabitMap(roomName) {
+    const meta = roomMeta.get(roomName);
+    const room = rooms.get(roomName);
+    if (!meta) return;
+    const map = filterInhabitMap(room, meta.inhabitReported);
+    if (sameInhabitMap(meta.inhabit, map)) return;
+    meta.inhabit = map;
+    if (room) broadcast(room, null, { type: 'inhabit', map });
+    refreshInhabitPermissions(roomName);
+    logEvent(roomName, 'inhabit', { map, reported: meta.inhabitReported });
+  }
+
+  function setInhabitMap(roomName, reported) {
+    getRoomMeta(roomName).inhabitReported = reported;
+    applyInhabitMap(roomName);
+  }
+
+  // May the participant holding `token` read and write `host`'s editor doc?
+  // Its owner always; a guest only while the map has it inside that host.
+  function mayWriteEditor(meta, token, host) {
+    if (token == null) return false;
+    const t = String(token);
+    return t === host || meta.inhabit[t] === host;
+  }
+
   function publicView(record) {
     return {
       peerId: record.peerId,
@@ -273,10 +475,59 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       isAggregator: record.isAggregator,
       muted: record.muted,
       videoOn: record.videoOn,
-      canEditMetaprogram: record.canEditMetaprogram,
-      canWriteModulation: record.canWriteModulation,
-      dataPacks: record.dataPacks
+      canEditMetaprogram: permissionsOf(record).canEditMetaprogram,
+      canWriteModulation: permissionsOf(record).canWriteModulation,
+      dataPacks: record.dataPacks,
+      customEmoji: record.customEmoji,
+      walkie: record.walkie,
+      permissionsConfig: record.permissionsConfig || sanitizePermissionsConfig(null)
     };
+  }
+
+  // Walkie Talkie Mode (src/walkie-talkie.js). A human who turns it on stays
+  // connected — their socket, their room index and their Jitsi session all
+  // survive — but to the rest of the meeting they have LEFT: every ordinary
+  // participant (and the aggregator, both its page and its metaprogram bus)
+  // is sent a peer-leave and then hears nothing more about them until they
+  // turn it off, when a fresh peer-join brings them back with their current
+  // record. Other walkie peers still see everything, and so does any bus
+  // connection that says `seesWalkie` in its hello (the fleet service): it
+  // must keep counting a walkie human as present, because Walkie Talkie Mode
+  // is not a reason to end the meeting even when every human is using it.
+  // It hears `peer-walkie` instead and decides for itself what "left" means.
+  function hiddenFrom(recipient, subject) {
+    return !!(subject && subject.walkie && recipient !== subject
+      && !recipient.walkie && !recipient.seesWalkie);
+  }
+
+  // Room-wide state rather than presence: delivered even when its sender is a
+  // walkie peer. A metaprogram edit that skipped some browsers would split the
+  // shared doc for good (the sidecar's own crdtLog still records it), and a
+  // panic is a safety signal that must always get through.
+  const WALKIE_PASSTHROUGH = new Set(['crdt-update', 'panic', 'session-reset']);
+
+  function sendWhere(room, accept, msg) {
+    const data = JSON.stringify(msg);
+    for (const peer of room.values()) {
+      if (!accept(peer) || peer.ws.readyState !== peer.ws.OPEN) continue;
+      try { peer.ws.send(data); } catch (e) { /* ignore */ }
+    }
+  }
+
+  // Who is currently in Walkie Talkie Mode, sent to every participant on each
+  // change: walkie peers dial each other from it, and everyone else hides the
+  // listed jitsiIds' Jitsi tiles and audio (the Jitsi session itself is still
+  // up, so without this their tile would linger after the peer-leave).
+  function walkieRosterMessage(room) {
+    return {
+      type: 'walkie-roster',
+      peers: [...room.values()].filter((r) => r.walkie)
+        .map((r) => ({ peerId: r.peerId, jitsiId: r.jitsiId, displayName: r.displayName, roomIndex: r.roomIndex })),
+    };
+  }
+
+  function broadcastWalkieRoster(room) {
+    sendWhere(room, (r) => !r.isFleet, walkieRosterMessage(room));
   }
 
   // Control connections (`?role=control`) watch the whole relay instead of one
@@ -323,8 +574,14 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
 
   function broadcast(room, exceptPeerId, msg) {
     const data = JSON.stringify(msg);
+    // The peer this message is about — the record a peer-update/-join/-leave
+    // names, otherwise its sender — so a walkie peer's traffic stops at the
+    // edge of the walkie group (see hiddenFrom).
+    const subjectId = msg.peerId ?? (msg.peer && msg.peer.peerId) ?? exceptPeerId;
+    const subject = WALKIE_PASSTHROUGH.has(msg.type) ? null : room.get(subjectId);
     for (const peer of room.values()) {
       if (peer.peerId === exceptPeerId) continue;
+      if (hiddenFrom(peer, subject)) continue;
       if (peer.ws.readyState === peer.ws.OPEN) {
         try { peer.ws.send(data); } catch (e) { /* ignore */ }
       }
@@ -408,6 +665,9 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       // client and in the aggregator. Held on the record so a late joiner gets
       // them in the roster rather than only hearing about later uploads.
       dataPacks: [],
+      // Emoji this peer uploaded, mirrored like dataPacks so a late joiner
+      // can draw a :shortcode: someone used before they arrived.
+      customEmoji: [],
       effects: { distortion: false, noise: false, reverb: false },
       playing: false,
       rtt: null,
@@ -430,7 +690,12 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       // Metaprogram permissions. Humans always read+edit; bots default to
       // read-only until their owner grants edit (Phase 8 UI, enforced here).
       canEditMetaprogram: true,
-      canWriteModulation: true
+      canWriteModulation: true,
+      // Walkie Talkie Mode — see hiddenFrom. `seesWalkie` marks a bus
+      // connection (the fleet service) that is told about walkie peers
+      // rather than having them hidden from it.
+      walkie: false,
+      seesWalkie: false
     };
 
     console.log(`[latency] connection room=${roomName} peerId=${peerId}`);
@@ -454,6 +719,13 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // for events but are not participants: no index, invisible in
           // rosters, never announced.
           record.isFleet = !!msg.isFleet || connRole === 'observer' || connRole === 'fleet';
+          // Only the aggregator's own bus connection asks for backing files;
+          // the fleet service and observers have no use for the bytes.
+          record.wantsBacking = record.isFleet && !!msg.wantsBacking;
+          record.seesWalkie = record.isFleet && !!msg.seesWalkie;
+          // A reconnecting walkie peer says so up front, so the room never
+          // briefly sees it rejoin before a separate 'walkie' message.
+          record.walkie = !record.isBot && !record.isAggregator && !record.isFleet && !!msg.walkie;
           // An aggregator's page carries the claim token its bot won the slot
           // with, so the roster record can be tied back to that claim: the
           // claim gate then tells the aggregator's OWN page (which speaks over
@@ -466,6 +738,9 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             record.canEditMetaprogram = false;
             record.canWriteModulation = false;
           }
+          // A reconnecting browser's permissionsConfig, so it never spends a
+          // moment under the defaults (see 'permissions-config').
+          if (msg.permissionsConfig) record.permissionsConfig = sanitizePermissionsConfig(msg.permissionsConfig);
 
           // Last line of admission control: a page announcing isAggregator while
           // ANOTHER token holds the room's live aggregator claim never becomes a
@@ -560,7 +835,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // Exclude this peer's own record from the roster (guards against re-hello
           // on the same socket where the record is already present in the room).
           const roster = Array.from(room.values())
-            .filter(r => r.peerId !== peerId && !r.isFleet)
+            .filter(r => r.peerId !== peerId && !r.isFleet && !hiddenFrom(record, r))
             .map(publicView);
           room.set(peerId, record);
 
@@ -589,6 +864,27 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
               kind: meta.lastActiveKind,
             });
           }
+          // …and the room's prebake, if one was uploaded: each browser applies
+          // its own token's part of it, so a joiner who missed the upload
+          // still needs the whole thing.
+          // `elapsed` is how long ago it was uploaded, by this server's clock,
+          // so the joiner's alternatives rotation lines up with everyone's.
+          if (!record.isFleet && meta.prebake) send(ws, { ...meta.prebake, elapsed: Date.now() - meta.prebake.sentAt });
+          // …and every backing file the room's performers have declared.
+          if (record.wantsBacking && meta.backingFiles) {
+            for (const file of meta.backingFiles.values()) send(ws, file);
+          }
+          // …and the No Code library and board, which every human renders.
+          if (!record.isFleet && meta.noCodeLibrary) send(ws, meta.noCodeLibrary);
+          if (!record.isFleet && meta.noCodeBoard) send(ws, meta.noCodeBoard);
+          if (record.walkie) broadcastWalkieRoster(room);
+          else if (!record.isFleet) send(ws, walkieRosterMessage(room));
+          // …and the `# inhabit` map in force, which is likewise only sent on
+          // change — sent even when empty, so a reconnecting browser drops an
+          // inhabitation that ended while it was away. A joiner the map
+          // already names (a guest who reloaded) takes up its host's
+          // permissions again below.
+          if (!record.isFleet) send(ws, { type: 'inhabit', map: meta.inhabit });
           if (!record.isFleet) {
             broadcast(room, peerId, { type: 'peer-join', peer: publicView(record) });
             logEvent(roomName, 'peer-join', {
@@ -600,6 +896,8 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             // exists from the next person through the door, and a watcher that
             // already knows it treats the repeat as a no-op.
             announceRoomActive(roomName);
+            applyInhabitMap(roomName);
+            refreshInhabitPermissions(roomName);
           }
           break;
         }
@@ -723,9 +1021,10 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             // generic bots instead of the ones the performer configured.
             code: typeof msg.code === 'string' ? msg.code : undefined,
             // The in-room Conductor panel's request payload (only for
-            // conductor-settings-get/set). The fleet applies the same
-            // REMOTELY_TUNABLE allowlist as the admin API, so forwarding the
-            // object here cannot widen what a participant is allowed to change.
+            // conductor-settings-get/set). The fleet accepts only its
+            // ROOM_TUNABLE keys and stores them on THIS room alone, so
+            // forwarding the object here cannot widen what a participant is
+            // allowed to change, nor reach another meeting.
             settings: msg.settings && typeof msg.settings === 'object' && !Array.isArray(msg.settings)
               ? msg.settings
               : undefined,
@@ -769,8 +1068,11 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // canWriteModulation. Denied updates are dropped and logged.
           if (typeof msg.update !== 'string' || !msg.update) break;
           const isModulation = msg.channel === 'modulation';
-          if (record.isBot && (isModulation ? !record.canWriteModulation : !record.canEditMetaprogram)) {
-            console.log(`[latency] dropped ${isModulation ? 'modulation' : 'metaprogram'} crdt-update from unpermissioned bot ${record.roomIndex ?? peerId}`);
+          // A guest is held to its host's permissions (permissionsOf), so a
+          // human inside a bot is as restricted as the bot.
+          const perms = permissionsOf(record);
+          if ((record.isBot || record.effective) && (isModulation ? !perms.canWriteModulation : !perms.canEditMetaprogram)) {
+            console.log(`[latency] dropped ${isModulation ? 'modulation' : 'metaprogram'} crdt-update from unpermissioned ${record.effective ? 'guest' : 'bot'} ${record.roomIndex ?? peerId}`);
             break;
           }
           const meta = getRoomMeta(roomName);
@@ -825,6 +1127,35 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           break;
         }
 
+        case 'walkie': {
+          const on = !!msg.on;
+          if (record.isBot || record.isAggregator || record.isFleet || record.walkie === on) break;
+          const room = rooms.get(roomName);
+          if (!room || !room.has(peerId)) { record.walkie = on; break; }
+          // Exactly the recipients hiddenFrom would screen this peer from
+          // once it is walkie — computed while it still isn't.
+          const viewers = (r) => r !== record && !r.walkie && !r.seesWalkie;
+          if (on) sendWhere(room, viewers, { type: 'peer-leave', peerId });
+          record.walkie = on;
+          if (!on) sendWhere(room, viewers, { type: 'peer-join', peer: publicView(record) });
+          sendWhere(room, (r) => r.seesWalkie, { type: 'peer-walkie', peerId, on });
+          broadcastWalkieRoster(room);
+          logEvent(roomName, 'walkie', { roomIndex: record.roomIndex, on });
+          break;
+        }
+
+        case 'walkie-signal': {
+          // WebRTC offer/answer/ICE between two walkie peers — relayed point
+          // to point, never broadcast, and only inside the walkie group.
+          if (!record.walkie || typeof msg.to !== 'string') break;
+          const room = rooms.get(roomName);
+          const target = room && room.get(msg.to);
+          if (!target || !target.walkie || target === record) break;
+          if (JSON.stringify(msg.data ?? null).length > 64 * 1024) break;
+          send(target.ws, { type: 'walkie-signal', from: peerId, data: msg.data ?? null });
+          break;
+        }
+
         case 'bot-permission': {
           // Owner grants/revokes a bot's metaprogram-edit or modulation-write
           // rights. Only humans may grant, only bots may be targets.
@@ -835,14 +1166,15 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           if (!target || !target.isBot) break;
           if (typeof msg.canEditMetaprogram === 'boolean') target.canEditMetaprogram = msg.canEditMetaprogram;
           if (typeof msg.canWriteModulation === 'boolean') target.canWriteModulation = msg.canWriteModulation;
+          // A bot that is itself inside a host keeps acting with the host's
+          // permissions; the grant takes effect when it leaves.
           broadcast(room, null, {
             type: 'peer-update',
             peerId: target.peerId,
-            patch: {
-              canEditMetaprogram: target.canEditMetaprogram,
-              canWriteModulation: target.canWriteModulation
-            }
+            patch: permissionsOf(target)
           });
+          // Anyone inhabiting this bot holds its permissions too.
+          refreshInhabitPermissions(roomName);
           logEvent(roomName, 'bot-permission', {
             fromIndex: record.roomIndex, targetIndex: target.roomIndex,
             canEditMetaprogram: target.canEditMetaprogram, canWriteModulation: target.canWriteModulation
@@ -910,6 +1242,17 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           break;
         }
 
+        case 'custom-emoji': {
+          if (record.isBot || record.isFleet) break;
+          const emoji = sanitizeCustomEmoji(msg.emoji);
+          if (!emoji) break;
+          record.customEmoji = emoji;
+          const room = rooms.get(roomName);
+          if (room) broadcast(room, peerId, { type: 'peer-update', peerId, patch: { customEmoji: emoji } });
+          logEvent(roomName, 'custom-emoji', { index: record.roomIndex, names: emoji.map((e) => e.name) });
+          break;
+        }
+
         case 'chat-file': {
           // A performer's image()/video()/document()/soundFile() pattern
           // fired: the bytes travel over the wire exactly once (broadcast,
@@ -933,8 +1276,113 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             name: msg.name.slice(0, 200),
             mime: msg.mime.slice(0, 100),
             data: msg.data,
+            post: !!msg.post,
           });
           logEvent(roomName, 'chat-file', { index: record.roomIndex, kind: msg.kind, name: msg.name, bytes: base64ByteLength(msg.data) });
+          break;
+        }
+
+        case 'backing-file': {
+          // A performer's backing() declaration names a file the aggregator
+          // must play (it mixes the file in after the turn gate, which is
+          // what lets it sound off-turn). Sent only by humans, forwarded only
+          // to connections that asked for it, and kept on the room keyed by
+          // (author, filename) so a re-send replaces rather than accumulates.
+          if (record.isBot || record.isFleet || record.roomIndex == null) break;
+          if (typeof msg.name !== 'string' || typeof msg.mime !== 'string' || typeof msg.data !== 'string') break;
+          if (!BACKING_KINDS.has(msg.kind)) break;
+          if (base64ByteLength(msg.data) > CHAT_FILE_MAX_BYTES) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          const out = {
+            type: 'backing-file',
+            fromIndex: record.roomIndex,
+            kind: msg.kind,
+            name: msg.name.slice(0, 200),
+            mime: msg.mime.slice(0, 100),
+            data: msg.data,
+          };
+          const meta = getRoomMeta(roomName);
+          if (!meta.backingFiles) meta.backingFiles = new Map();
+          const key = `${out.fromIndex}\u0000${out.name}`;
+          meta.backingFiles.delete(key);
+          meta.backingFiles.set(key, out);
+          while (meta.backingFiles.size > BACKING_MAX_FILES) {
+            meta.backingFiles.delete(meta.backingFiles.keys().next().value);
+          }
+          for (const peer of room.values()) {
+            if (peer.wantsBacking) send(peer.ws, out);
+          }
+          logEvent(roomName, 'backing-file', { index: record.roomIndex, kind: msg.kind, name: msg.name, bytes: base64ByteLength(msg.data) });
+          break;
+        }
+
+        case 'prebake': {
+          // A human uploaded a meeting prebake. Stored on the room (replacing
+          // any earlier one) and sent to EVERYONE, uploader included, so every
+          // browser applies the same id — the id is what stops a reconnect
+          // from applying the same prebake twice.
+          if (record.isBot || record.isFleet) break;
+          if (!msg.prebake || typeof msg.prebake !== 'object' || Array.isArray(msg.prebake)) break;
+          const bytes = Buffer.byteLength(typeof data === 'string' ? data : data.toString());
+          if (bytes > PREBAKE_MAX_BYTES) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          const out = { type: 'prebake', id: randomUUID(), fromIndex: record.roomIndex, sentAt: Date.now(), elapsed: 0, prebake: msg.prebake };
+          getRoomMeta(roomName).prebake = out;
+          // Participants only (bots included — a bot names itself from its
+          // own entry); the fleet has no use for the file's bytes.
+          for (const peer of room.values()) {
+            if (!peer.isFleet) send(peer.ws, out);
+          }
+          logEvent(roomName, 'prebake', { fromIndex: record.roomIndex, bytes });
+          break;
+        }
+
+        case 'no-code-library': {
+          // A human uploaded snippets into the No Code library. The client
+          // merges its upload into the library it holds and sends the whole
+          // thing; it replaces the room's copy and goes to everyone, uploader
+          // included, so every browser shows the same library.
+          if (record.isBot || record.isFleet) break;
+          if (!Array.isArray(msg.snippets)) break;
+          const bytes = Buffer.byteLength(typeof data === 'string' ? data : data.toString());
+          if (bytes > NO_CODE_MAX_BYTES) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          const out = { type: 'no-code-library', fromIndex: record.roomIndex, snippets: msg.snippets };
+          getRoomMeta(roomName).noCodeLibrary = out;
+          for (const peer of room.values()) {
+            if (!peer.isFleet) send(peer.ws, out);
+          }
+          logEvent(roomName, 'no-code-library', { fromIndex: record.roomIndex, count: msg.snippets.length, bytes });
+          break;
+        }
+
+        case 'no-code-board': {
+          // An edit to the shared No Code whiteboard: the whole board, last
+          // writer wins. Relayed to everyone else; the editor already has it.
+          if (record.isBot || record.isFleet) break;
+          if (!msg.board || typeof msg.board !== 'object' || !Array.isArray(msg.board.lines)) break;
+          const bytes = Buffer.byteLength(typeof data === 'string' ? data : data.toString());
+          if (bytes > NO_CODE_BOARD_MAX_BYTES) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          const out = { type: 'no-code-board', fromIndex: record.roomIndex, board: msg.board };
+          getRoomMeta(roomName).noCodeBoard = out;
+          broadcast(room, peerId, out);
+          break;
+        }
+
+        case 'no-code-run': {
+          // "Run for room": every other human runs the board as it stands in
+          // their own browser. Not cached — a late joiner was not asked.
+          if (record.isBot || record.isFleet) break;
+          if (!Number.isInteger(msg.rev)) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          broadcast(room, peerId, { type: 'no-code-run', fromIndex: record.roomIndex, rev: msg.rev });
+          logEvent(roomName, 'no-code-run', { fromIndex: record.roomIndex, rev: msg.rev });
           break;
         }
 
@@ -957,6 +1405,190 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             previousOption: msg.previousOption ? msg.previousOption.slice(0, 200) : null,
             voterToken: msg.voterToken.slice(0, 32),
           });
+          break;
+        }
+
+        case 'inhabit': {
+          // The `# inhabit` guest → host map (see setInhabitMap). The
+          // aggregator's metaprogram bus is authoritative; until one reports,
+          // a human allowed to edit the metaprogram may.
+          const meta = getRoomMeta(roomName);
+          if (record.isFleet) {
+            meta.inhabitReporter = peerId;
+          } else if (record.isBot || record.roomIndex == null || meta.inhabitReporter || !permissionsOf(record).canEditMetaprogram) {
+            break;
+          }
+          setInhabitMap(roomName, sanitizeInhabitMap(msg.map));
+          // The reporter acts on the map too (the aggregator mixes guests
+          // into hosts' slots), and must act on what is IN FORCE, so it
+          // hears the filtered map back even when nothing changed for the
+          // room. (Fleet connections get no copy on hello.)
+          if (record.isFleet) send(ws, { type: 'inhabit', map: meta.inhabit });
+          break;
+        }
+
+        case 'permissions-config': {
+          // This participant's own permissionsConfig(...) declaration — see
+          // sanitizePermissionsConfig. Shared with the room as a peer-update,
+          // and applied to the `# inhabit` map at once.
+          if (record.isFleet || record.roomIndex == null) break;
+          const next = sanitizePermissionsConfig(msg.config);
+          if (JSON.stringify(next) === JSON.stringify(record.permissionsConfig || sanitizePermissionsConfig(null))) break;
+          record.permissionsConfig = next;
+          const room = rooms.get(roomName);
+          if (room) broadcast(room, peerId, { type: 'peer-update', peerId, patch: { permissionsConfig: next } });
+          applyInhabitMap(roomName);
+          logEvent(roomName, 'permissions-config', { roomIndex: record.roomIndex, config: next });
+          break;
+        }
+
+        case 'inhabit-relay': {
+          // Point to point between a guest and its host (src/inhabit.js): the
+          // host's snapshot — theme, private chats, devices, routes — down to
+          // a guest; a guest's private message, route decision or "send me
+          // the snapshot" up to the host. Only a pair the map joins may talk,
+          // and only in its own direction, so ending an inhabitation closes
+          // the channel with it.
+          const room = rooms.get(roomName);
+          if (!room || record.isFleet || record.roomIndex == null) break;
+          const target = room.get(msg.to);
+          if (!target || target.isFleet || target.roomIndex == null) break;
+          const map = getRoomMeta(roomName).inhabit;
+          const from = String(record.roomIndex);
+          const to = String(target.roomIndex);
+          const ok = (map[from] === to && INHABIT_GUEST_KINDS.has(msg.kind))
+            || (map[to] === from && INHABIT_HOST_KINDS.has(msg.kind));
+          if (!ok) break;
+          let size = 0;
+          try { size = JSON.stringify(msg.data ?? null).length; } catch (e) { break; }
+          if (size > INHABIT_RELAY_MAX) break;
+          send(target.ws, { type: 'inhabit-relay', from: peerId, fromIndex: record.roomIndex, kind: msg.kind, data: msg.data ?? null });
+          break;
+        }
+
+        case 'editor-crdt-update': {
+          // One edit to an inhabited personal editor (src/inhabit.js): opaque
+          // Yjs, like crdt-update, but per HOST and seen only by the host and
+          // its current guests — a personal editor is not the room's business.
+          const host = typeof msg.host === 'string' ? msg.host : null;
+          if (!isInhabitToken(host) || typeof msg.update !== 'string' || !msg.update) break;
+          if (msg.update.length > EDITOR_UPDATE_MAX) break;
+          const meta = getRoomMeta(roomName);
+          if (!mayWriteEditor(meta, record.roomIndex, host)) break;
+          let log = meta.editorLogs.get(host);
+          if (!log) {
+            if (meta.editorLogs.size >= EDITOR_DOCS_MAX) break;
+            log = [];
+            meta.editorLogs.set(host, log);
+          }
+          if (msg.snapshot) log.splice(0, log.length, msg.update);
+          else {
+            log.push(msg.update);
+            if (log.length > EDITOR_LOG_MAX) log.shift();
+          }
+          const room = rooms.get(roomName);
+          if (room) {
+            sendWhere(room, (r) => r.peerId !== peerId && !r.isFleet && mayWriteEditor(meta, r.roomIndex, host), {
+              type: 'editor-crdt-update', host, update: msg.update, authorIndex: record.roomIndex,
+            });
+          }
+          break;
+        }
+
+        case 'editor-crdt-sync': {
+          // A guest arriving in a host (or the host itself, after a
+          // reconnect) asks for the editor doc's history so far.
+          const host = typeof msg.host === 'string' ? msg.host : null;
+          if (!isInhabitToken(host)) break;
+          const meta = getRoomMeta(roomName);
+          if (!mayWriteEditor(meta, record.roomIndex, host)) break;
+          send(ws, { type: 'editor-crdt-state', host, updates: [...(meta.editorLogs.get(host) || [])] });
+          break;
+        }
+
+        case 'breakout-request': {
+          // A breakout()/assign() voice fired in its author's browser (see
+          // src/breakout.js). Relayed to the whole room — the elected
+          // moderator browser, wherever it is, is the one that acts.
+          if (record.isBot || record.isFleet) break;
+          if (msg.fn !== 'breakout' && msg.fn !== 'assign') break;
+          const spec = msg.spec;
+          if (!spec || typeof spec !== 'object' || typeof spec.name !== 'string') break;
+          if (!Array.isArray(spec.participants)) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          broadcast(room, peerId, {
+            type: 'breakout-request',
+            fn: msg.fn,
+            fromIndex: record.roomIndex,
+            spec: {
+              name: spec.name.slice(0, 200),
+              participants: spec.participants.slice(0, 200).map((p) => String(p).slice(0, 32)),
+            },
+          });
+          break;
+        }
+
+        case 'meeting-move': {
+          // A meeting() voice fired in its author's browser (see
+          // src/meeting-move.js). Relayed to this room, the target meeting,
+          // and every meeting a request from this room has sent people to —
+          // which is where anyone it already moved now is. The browsers
+          // named move themselves; no moderator is involved. Stamped here,
+          // on one clock for every meeting, and sent back to the author too:
+          // the stamp is what settles conflicting requests, and the author
+          // may have named themselves.
+          // A walkie peer has left the meeting as far as the room knows; it
+          // does not get to move anyone.
+          if (record.isBot || record.isFleet || record.walkie) break;
+          const spec = msg.spec;
+          if (!spec || typeof spec !== 'object' || typeof spec.name !== 'string') break;
+          if (!Array.isArray(spec.participants)) break;
+          const name = spec.name.trim().toLowerCase().slice(0, 200);
+          if (!name) break;
+          const out = {
+            type: 'meeting-move',
+            fromIndex: record.roomIndex,
+            origin: roomName,
+            at: (lastMeetingMoveAt = Math.max(Date.now(), lastMeetingMoveAt + 1)),
+            spec: {
+              name,
+              participants: spec.participants.slice(0, 200).map((p) => String(p).slice(0, 32)),
+            },
+          };
+          let satellites = meetingSatellites.get(roomName);
+          if (!satellites) meetingSatellites.set(roomName, (satellites = new Set()));
+          if (name !== 'main' && name !== roomName && satellites.size < MAX_MEETING_SATELLITES) satellites.add(name);
+          for (const target of [roomName, ...satellites]) {
+            const room = rooms.get(target);
+            if (room) broadcast(room, null, out);
+          }
+          break;
+        }
+
+        case 'panic': {
+          // The breakout-room panic button (src/panic-button.js): everyone
+          // in the meeting is told, whichever breakout room they are in —
+          // this socket is keyed by the URL room, which a breakout move
+          // does not change — and so is the home meeting of someone a
+          // meeting() pattern moved here.
+          if (record.isFleet) break;
+          const out = {
+            type: 'panic',
+            fromIndex: record.roomIndex,
+            token: typeof msg.token === 'string' ? msg.token.slice(0, 32) : null,
+            displayName: typeof msg.displayName === 'string' ? msg.displayName.slice(0, 200) : (record.displayName || null),
+            room: typeof msg.room === 'string' ? msg.room.slice(0, 200) : null,
+          };
+          const room = rooms.get(roomName);
+          if (room) broadcast(room, peerId, out);
+          // Over there they knew this participant by their token there.
+          const home = typeof msg.homeMeeting === 'string' ? msg.homeMeeting.toLowerCase().slice(0, 200) : null;
+          const homeRoom = home && home !== roomName ? rooms.get(home) : null;
+          if (homeRoom) {
+            broadcast(homeRoom, peerId, { ...out, token: typeof msg.homeToken === 'string' ? msg.homeToken.slice(0, 32) : null });
+          }
+          logEvent(roomName, 'panic', { fromIndex: record.roomIndex });
           break;
         }
 
@@ -986,10 +1618,17 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // state and are never overridden. The action is relayed to the target's
           // socket (so it re-evaluates / mutes) and the resulting state change is
           // broadcast so every studio reflects it.
+          //
+          // The one exception: a guest inhabiting a human (`# inhabit`) runs
+          // the host's editor, so it may send that host a 'pattern' — only
+          // that, and only while the map has it inside that host.
           const room = rooms.get(roomName);
           if (!room) break;
           const target = room.get(msg.targetPeerId);
-          if (!target || !target.isBot) break;
+          if (!target) break;
+          const inhabitsTarget = record.roomIndex != null && target.roomIndex != null
+            && getRoomMeta(roomName).inhabit[String(record.roomIndex)] === String(target.roomIndex);
+          if (!target.isBot && !(inhabitsTarget && msg.action === 'pattern')) break;
           if (msg.action === 'pattern' && typeof msg.code === 'string') {
             target.pattern = msg.code;
             send(target.ws, { type: 'remote-control', action: 'pattern', code: target.pattern });
@@ -1087,10 +1726,17 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       const room = rooms.get(roomName);
       if (room && room.has(peerId)) {
         room.delete(peerId);
+        // The aggregator's bus went away: a human may report the static
+        // `# inhabit` map again until the next aggregator does.
+        const leftMeta = roomMeta.get(roomName);
+        if (leftMeta && leftMeta.inhabitReporter === peerId) leftMeta.inhabitReporter = null;
         if (!record.isFleet) {
           broadcast(room, peerId, { type: 'peer-leave', peerId });
           logEvent(roomName, 'peer-leave', { roomIndex: record.roomIndex });
+          applyInhabitMap(roomName);
+          refreshInhabitPermissions(roomName);
         }
+        if (record.walkie) broadcastWalkieRoster(room);
         if (room.size === 0) {
           rooms.delete(roomName);
           roomMeta.delete(roomName); // meeting over — counters reset with it

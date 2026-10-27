@@ -4,6 +4,7 @@ import { mkdirSync, copyFileSync, readdirSync, existsSync, cpSync, watch } from 
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildPages, PAGE_FILES } from './build-pages.mjs';
+import { writeIpaSounds } from './scripts/ipa-synth.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STRUDEL_FORK_WEB = resolve(__dirname, 'strudel-fork/packages/web');
@@ -72,6 +73,11 @@ const postBuild = {
 			// (The Vite dev server rebuilds dist pages with the poll itself.)
 			buildPages('dist', { hotReload: false });
 			copyStrudelAssets();
+			// The sounds `.speak()` plays for IPA words, fetched from
+			// /assets/ipa/ — so they ride every copy of dist/assets. Skipped
+			// when the folder's VERSION stamp is already current.
+			const ipa = writeIpaSounds(join(STRUDEL_ASSETS_DEST, 'ipa'));
+			if (ipa) console.log(`[build] synthesized ${ipa} IPA sounds -> ${STRUDEL_ASSETS_DEST}/ipa`);
 			if (DEPLOY) {
 				deployToContainer();
 				console.log(`[build] deployed -> docker-jitsi-meet/jitsi-web/  ${new Date().toLocaleTimeString()}`);

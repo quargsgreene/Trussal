@@ -5,6 +5,7 @@ import { pageRemoteControl } from '../src/bot/page-scripts.js';
 import { INIT_HYDRA_PATTERN, HYDRA_SHAPE_PATTERN } from '../../src/hydra-code.js';
 import { INIT_TEXT_CYCLES_PATTERN, WORD_CALL_RE } from '../../src/text-cycles-core.js';
 import { INIT_CSS_PATTERN, CSS_CALL_RE } from '../../src/css-cycles-core.js';
+import { PERMISSIONS_CONFIG_STATEMENT_PATTERN } from '../../src/permissions-config.js';
 
 const DEFAULT_CAPABILITY_PATTERNS = {
   word: { source: WORD_CALL_RE.source, flags: WORD_CALL_RE.flags },
@@ -12,6 +13,7 @@ const DEFAULT_CAPABILITY_PATTERNS = {
   initTextCycles: INIT_TEXT_CYCLES_PATTERN,
   initCss: INIT_CSS_PATTERN,
   hydraShape: HYDRA_SHAPE_PATTERN,
+  permissionsConfig: PERMISSIONS_CONFIG_STATEMENT_PATTERN,
 };
 
 /**
@@ -264,6 +266,15 @@ test('a bot with no Hydra evaluates the edit as-is', async () => {
   const ctl = installControl({ hydra: '' });
   await ctl.push('s("bd sd")');
   assert.equal(ctl.evaluated[0], 's("bd sd")');
+});
+
+test('a permissionsConfig declaration is not evaluated, but is still announced for the room to read', async () => {
+  const ctl = installControl({ hydra: '' });
+  const announced = [];
+  global.window.__trussalAnnounceLocalPattern = (code) => announced.push(code);
+  await ctl.push('permissionsConfig({ allowClipping: false, allowInhabitFrom: ["1"] })\ns("bd sd")');
+  assert.equal(ctl.evaluated[0], 's("bd sd")');
+  assert.match(announced[0], /permissionsConfig\(\{ allowClipping: false/);
 });
 
 test('a non-string payload is ignored', async () => {

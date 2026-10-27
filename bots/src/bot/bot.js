@@ -10,6 +10,7 @@
 
 import { INIT_HYDRA_PATTERN, HYDRA_SHAPE_PATTERN } from '../../../src/hydra-code.js';
 import { DIRECTIVE_LINE_PATTERN } from '../../../src/program-directive.js';
+import { PERMISSIONS_CONFIG_STATEMENT_PATTERN } from '../../../src/permissions-config.js';
 import { INIT_TEXT_CYCLES_PATTERN, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { INIT_CSS_PATTERN, CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
@@ -94,6 +95,10 @@ export class Bot {
       // with — a bare string literal the bare REPL has no use for, stripped
       // the same way the browser's normalizePeerCode strips it.
       directive: DIRECTIVE_LINE_PATTERN,
+      // A permissionsConfig(...) declaration (src/permissions-config.js) is
+      // not code either: stripped from what the REPL evaluates, kept in what
+      // the bot announces, which is where the room reads it from.
+      permissionsConfig: PERMISSIONS_CONFIG_STATEMENT_PATTERN,
     });
     // Off-screen staging CSS for page scripts (page-scripts.css). Registered
     // before the scripts that create staged elements.

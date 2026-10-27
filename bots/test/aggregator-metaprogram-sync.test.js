@@ -206,22 +206,21 @@ test('the Delayed Streaming toggle rides the settings map from a human to the ag
     await sleep(150);
     await bot.interpretAndExecuteMetaprogram();
     await sleep(200);
-    assert.equal(bot.delayedStreaming, false, 'off until the room asks for it');
+    assert.equal(bot.delayedStreaming, true, 'on by default');
 
-    // The Studio button: a settings-map write, not a program edit — the
-    // program text and ring are untouched. It stamps the backlog cap alongside
-    // the toggle so the aggregator and every browser read one delay.
+    // A settings-map write, not a program edit — the program text and ring
+    // are untouched, and the backlog cap rides alongside the toggle.
     human.sync.setSetting('backlogMs', 12000);
-    human.sync.setSetting('delayedStreaming', true);
+    human.sync.setSetting('delayedStreaming', false);
     await sleep(300);
-    assert.equal(bot.delayedStreaming, true, 'the aggregator adopted the room-wide toggle');
+    assert.equal(bot.delayedStreaming, false, 'the aggregator adopted the room-wide override');
     assert.equal(bot.backlogMs, 12000, 'and the backlog cap that rode with it');
     assert.equal(bot.programText, mp('$ participants <0>'), 'the toggle did not touch the program');
     assert.deepEqual(bot.order.order(), ['0'], 'nor the ring');
 
-    human.sync.setSetting('delayedStreaming', false);
+    human.sync.setSetting('delayedStreaming', true);
     await sleep(300);
-    assert.equal(bot.delayedStreaming, false, 'and the flip back reaches it too');
+    assert.equal(bot.delayedStreaming, true, 'and the flip back reaches it too');
   } finally {
     await bot.stop().catch(() => {});
     human.ws.close();

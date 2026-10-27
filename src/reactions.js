@@ -21,6 +21,7 @@
 
 import { getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
 import { resolveReaction, resolveUnreactMs } from './reactions-core.js';
+import { silentRenderer } from './multimedia-core.js';
 
 // Best-effort dispatch into Jitsi's own reactions feature, exactly the way
 // text-cycles.js's openChatPanel()/setNickname() reach into APP.store: if the
@@ -78,7 +79,7 @@ export function installReactions(mod) {
     ...registerControl('reaction'),
     ...registerControl('unreact'),
   };
-  register('_rxRender', (pat) => pat.onTrigger(handleTrigger, true));
+  register('_rxRender', silentRenderer(handleTrigger, 'reaction'));
   return scope;
 }
 

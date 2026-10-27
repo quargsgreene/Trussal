@@ -227,7 +227,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
 
     // Room-wide runtime toggles (settingKey → value). A plain snapshot of the
     // Y.Map — callers read `delayedStreaming` off it. Unset keys are simply
-    // absent, so `!!getSettings().delayedStreaming` is the honest default-off.
+    // absent; Delayed Streaming treats an absent key as on (default-on).
     getSettings() {
       const out = {};
       if (settings) settings.forEach((v, k) => { out[k] = v; });
@@ -262,7 +262,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
     },
     setBreakoutProgram(roomName, value, origin = 'settings') {
       if (!breakoutPrograms || !roomName) return;
-      doc.transact(() => breakoutPrograms.set(name, String(value ?? '')), origin);
+      doc.transact(() => breakoutPrograms.set(roomName, String(value ?? '')), origin);
     },
     onBreakoutProgramsChange(fn) {
       if (!breakoutPrograms) return () => {};

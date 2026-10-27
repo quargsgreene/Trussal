@@ -306,6 +306,28 @@ test('a routine re-adoption preserves a ghost; a genuine re-apply that still lis
   assert.equal(q.jitsiIdFor('0'), 'src-0-rejoined', 'the placeholder folds in the rejoiner');
 });
 
+test('a ghost away in a breakout room keeps replaying through a genuine re-apply, then revives on return', () => {
+  const q = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
+  q.register('src-0', '0');
+  q.register('src-1', '1');
+  q.applyMetaprogramOrder(['0', '1']);
+  q.depart('src-0'); // moved into a breakout room: left this MUC, still in the meeting
+
+  const retired = q.applyMetaprogramOrder(['0', '1'], { programUpdate: true, isAway: (t) => t === '0' });
+  assert.deepEqual(retired, [], 'an away ghost is not retired, so its buffer is kept');
+  assert.equal(q.serve().departed, true, 'position 0 still replays the ghost');
+  assert.equal(q.jitsiIdFor('0'), 'src-0', 'identity kept for the return');
+
+  // Back in the main room under a NEW endpoint id: binds to the slot and revives.
+  assert.equal(q.register('src-0-back', '0'), '0');
+  assert.equal(q.revive('src-0-back'), true, 'fresh audio un-ghosts the slot');
+  assert.equal(q.serve().departed, false);
+
+  // Dropped from the program while away: retired as usual.
+  q.depart('src-0-back');
+  assert.deepEqual(q.applyMetaprogramOrder(['1'], { programUpdate: true, isAway: () => true }), ['0']);
+});
+
 test('knowsToken reports an off-ring token so its live source is not stranded when the program lists it', () => {
   const q = new CircularParticipantQueue();
   q.register('src-0', '0');

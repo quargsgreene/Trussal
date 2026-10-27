@@ -20,11 +20,19 @@ import { mosaicCellSource, splitHydraCode, usesPatternParams } from '../hydra-co
 // video feedback loop. Peers with no room index are excluded too: the ring
 // addresses participants by token, so one without an index can never take a
 // turn and its cell could never light up.
+//
+// So are peers that aren't playing. A performer's own browser takes their
+// Hydra down the moment they press Stop (strudel.js buildPeerBlock drops a
+// non-playing peer's whole block), but the ring keeps naming tokens whether or
+// not anyone is playing — so a cell kept for a stopped performer went on being
+// lit, and with everyone stopped the room kept seeing every performer's
+// visuals turn by turn while the audio had gone silent. Dropping the cell also
+// tears down the page's Hydra instance for it, rather than leaving it ticking.
 export function mosaicCellsForPeers(peers) {
   const list = Array.isArray(peers) ? peers : [...(peers?.values?.() ?? [])];
   const cells = [];
   for (const peer of list) {
-    if (!peer || peer.isAggregator) continue;
+    if (!peer || peer.isAggregator || !peer.playing) continue;
     const token = peer.roomIndex == null ? null : String(peer.roomIndex);
     if (!token) continue;
     const source = mosaicCellSource(peer.pattern);

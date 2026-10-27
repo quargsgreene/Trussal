@@ -53,6 +53,21 @@ COPY src/strudel-voice.js /repo/src/strudel-voice.js
 # call shapes (file()/image()/etc., poll()) — same two entries as Dockerfile.bot.
 COPY src/file-cycles-core.js /repo/src/file-cycles-core.js
 COPY src/polls-core.js /repo/src/polls-core.js
+# BACKING_CALL_RE (cluster-source.js imports it) — the backing() call shape.
+# Its own imports are all copied above. Same two entries as Dockerfile.bot.
+COPY src/backing-core.js /repo/src/backing-core.js
+# hydra-code.js strips permissionsConfig(...) declarations with
+# permissions-config.js, which imports inhabit-core.js, which imports
+# breakout-core.js — same entries as Dockerfile.bot.
+COPY src/permissions-config.js /repo/src/permissions-config.js
+COPY src/inhabit-core.js /repo/src/inhabit-core.js
+COPY src/breakout-core.js /repo/src/breakout-core.js
+# hydra-code.js also imports it: the output-route directive rule. Same two
+# entries.
+COPY src/output-route-core.js /repo/src/output-route-core.js
+# hydra-code.js also imports it: MULTI_CALL_RE (multiArrange()/multiStack()).
+# Same two entries as Dockerfile.bot.
+COPY src/multimedia-core.js /repo/src/multimedia-core.js
 RUN ln -s bots/node_modules /repo/node_modules
 
 # Import guard: fail the BUILD if anything the conductor runs cannot load inside

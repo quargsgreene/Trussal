@@ -73,6 +73,7 @@ function makeFakes({
     roomPushes: [], noisePushes: [], crushPushes: [], echoPushes: [],
     mosaicCells: [], mosaicActive: [], mosaicEnabled: [], mosaicCycle: [],
     mosaicOutput: [], outputVendor: [],
+    backingSet: [], backingLoad: [], backingActive: [],
   };
   const fakePage = {
     setUserAgent: async () => {},
@@ -97,6 +98,16 @@ function makeFakes({
       if (/\.setNoise\(/.test(s)) { calls.noisePushes.push(args[0]); return undefined; } // pageSetMasterNoise
       if (/\.setCrush\(/.test(s)) { calls.crushPushes.push(args[0]); return undefined; } // pageSetMasterCrush
       if (/\.setEcho\(/.test(s)) { calls.echoPushes.push(args[0]); return undefined; }   // pageSetMasterEcho
+      // Backing voices. Ahead of the mosaic arms: pageSetBackingActive's body
+      // calls setActive( too. The fake page holds no files, so every pushed
+      // key that has not been load()ed yet is reported as needed.
+      if (/__trussalBacking/.test(s)) {
+        if (/\.setActive\(/.test(s)) { calls.backingActive.push(args[0]); return true; } // pageSetBackingActive
+        if (/\.load\(/.test(s)) { calls.backingLoad.push(args); return true; }           // pageLoadBacking
+        calls.backingSet.push(args[0]);                                                   // pageSetBacking
+        const loaded = new Set(calls.backingLoad.map(([key]) => key));
+        return args[0].map((b) => b.key).filter((key) => !loaded.has(key));
+      }
       if (/setCells\(/.test(s)) { calls.mosaicCells.push(args[0]); return true; }        // pageSetMosaicCells
       if (/setActive\(/.test(s)) { calls.mosaicActive.push(args[0]); return true; }      // pageSetMosaicActive
       if (/setEnabled\(/.test(s)) { calls.mosaicEnabled.push(args[0]); return true; }    // pageSetMosaicEnabled
@@ -775,7 +786,7 @@ test('bots participate in the alternation under their cluster tokens', async () 
   const { calls, fakeLauncher } = makeFakes();
   let clock = 0;
   const bot = new AggregatorBot(
-    { ...cfg, slotMs: 1000 },
+    { ...cfg, slotMs: 1000, delayedStreaming: false },
     { launcher: fakeLauncher, logIngest: false, now: () => clock },
     {}, 1024,
   );
@@ -903,7 +914,7 @@ test('single human, no bots: one continuous stream, never alternating', async ()
   const { calls, fakeLauncher } = makeFakes();
   let clock = 0;
   const bot = new AggregatorBot(
-    { ...cfg, slotMs: 1000 },
+    { ...cfg, slotMs: 1000, delayedStreaming: false },
     { launcher: fakeLauncher, logIngest: false, now: () => clock },
     {}, 1024,
   );
@@ -940,16 +951,18 @@ test('single human, no bots: one continuous stream, never alternating', async ()
 // FIFO arithmetic is legible. Batch levels are all float32-exact (k / 2^n) so
 // Float32Array round-trips them for deepEqual.
 
-test('delayed streaming: OFF by default — a turn drains the live buffer (onset), no backlog', async () => {
+test('delayed streaming: ON by default; when turned OFF a turn drains the live buffer (onset), no backlog', async () => {
   const { fakeLauncher } = makeFakes();
+  assert.equal(new AggregatorBot(cfg, { launcher: fakeLauncher }, {}, 1024).delayedStreaming, true,
+    'on unless explicitly disabled');
   let clock = 0;
   const bot = new AggregatorBot(
-    { ...cfg, slotMs: 1000 },
+    { ...cfg, slotMs: 1000, delayedStreaming: false },
     { launcher: fakeLauncher, logIngest: false, now: () => clock },
     {}, 1024,
   );
   await bot.start();
-  assert.equal(bot.delayedStreaming, false, 'off unless explicitly enabled');
+  assert.equal(bot.delayedStreaming, false, 'off when explicitly disabled');
 
   bot.buffers['0'] = new RingBuffer(1024);
   bot.buffers['0'].write(new Array(200).fill(0.5));
@@ -2361,7 +2374,7 @@ async function mosaicBot({ bandwidth = { videoHeight: 720 }, now, slotMs, pageOu
 test('mosaic: the frame follows the configured send-side video height, at 16:9', async () => {
   const { calls, bus, bot } = await mosaicBot({ bandwidth: { videoHeight: 360 } });
   try {
-    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA }] });
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, playing: true }] });
     assert.deepEqual(calls.mosaicCells.at(-1).layout[0].rect, { x: 0, y: 0, w: 640, h: 360 },
       'a 360p cap publishes a 640x360 mosaic, not a 720p frame the bridge would only downscale');
   } finally {
@@ -2493,7 +2506,7 @@ test('mosaic: a peer running Hydra gets a cell, laid out in the published frame'
     bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', pattern: 's("bd")' }] });
     assert.deepEqual(calls.mosaicCells.at(-1)?.cells ?? [], [], 'a Strudel-only peer gets no cell');
 
-    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA }] });
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, playing: true }] });
     const pushed = calls.mosaicCells.at(-1);
     assert.deepEqual(pushed.cells.map(c => c.token), ['0']);
     assert.deepEqual(pushed.slots, ['0']);
@@ -2509,7 +2522,7 @@ test('mosaic: cells fill the frame, four of them in a 2x2', async () => {
   const { calls, bus, bot } = await mosaicBot();
   try {
     bus.rec.deliver({ type: 'roster', peers: ['0', '1', '2', '3'].map((i) => (
-      { peerId: `p${i}`, roomIndex: i, jitsiId: `j${i}`, pattern: HYDRA }
+      { peerId: `p${i}`, roomIndex: i, jitsiId: `j${i}`, pattern: HYDRA, playing: true }
     )) });
 
     const { layout } = calls.mosaicCells.at(-1);
@@ -2532,7 +2545,7 @@ test('mosaic: a peer stopping Hydra blanks their slot, and the next arrival take
     const peers = (patterns) => ({
       type: 'roster',
       peers: Object.entries(patterns).map(([i, pattern]) => (
-        { peerId: `p${i}`, roomIndex: i, jitsiId: `j${i}`, pattern }
+        { peerId: `p${i}`, roomIndex: i, jitsiId: `j${i}`, pattern, playing: true }
       )),
     });
 
@@ -2553,12 +2566,37 @@ test('mosaic: a peer stopping Hydra blanks their slot, and the next arrival take
 
 });
 
+// The ring keeps naming tokens whether or not anyone is playing, so a cell
+// left up for a stopped performer keeps getting lit with their visuals.
+test('mosaic: a performer who stops loses their cell, and everyone stopping leaves none', async () => {
+  const { calls, bus, bot } = await mosaicBot();
+  try {
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, playing: true },
+      { peerId: 'p1', roomIndex: '1', jitsiId: 'j1', pattern: HYDRA, playing: true },
+    ] });
+    assert.deepEqual(calls.mosaicCells.at(-1).cells.map(c => c.token), ['0', '1']);
+
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { playing: false } });
+    assert.deepEqual(calls.mosaicCells.at(-1).cells.map(c => c.token), ['1'],
+      'Stop takes the cell down even though the code still declares Hydra');
+
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p1', patch: { playing: false } });
+    assert.deepEqual(calls.mosaicCells.at(-1).cells, [], 'nobody playing: no Hydra left running');
+
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { playing: true } });
+    assert.deepEqual(calls.mosaicCells.at(-1).cells.map(c => c.token), ['0'], 'Play brings it back');
+  } finally {
+    await bot.stop();
+  }
+});
+
 test('mosaic: camera-fed code is marked for blitting, and carries its jitsiId', async () => {
   const { calls, bus, bot } = await mosaicBot();
   try {
     bus.rec.deliver({ type: 'roster', peers: [
-      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA },
-      { peerId: 'p1', roomIndex: '1', jitsiId: 'j1', pattern: HYDRA_CAM },
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, playing: true },
+      { peerId: 'p1', roomIndex: '1', jitsiId: 'j1', pattern: HYDRA_CAM, playing: true },
     ] });
 
     const { cells } = calls.mosaicCells.at(-1);
@@ -2575,7 +2613,7 @@ test('mosaic: camera-fed code is marked for blitting, and carries its jitsiId', 
 test('mosaic: a metrics-only peer update does not re-push the cells', async () => {
   const { calls, bus, bot } = await mosaicBot();
   try {
-    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, rtt: 20 }] });
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, rtt: 20, playing: true }] });
     const pushes = calls.mosaicCells.length;
 
     bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 90 } });
@@ -2594,8 +2632,8 @@ test('mosaic: the aggregator is not a cell in its own mosaic', async () => {
   const { calls, bus, bot } = await mosaicBot();
   try {
     bus.rec.deliver({ type: 'roster', peers: [
-      { peerId: 'pAgg', roomIndex: 'pi', jitsiId: 'jAgg', pattern: HYDRA, isAggregator: true },
-      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA },
+      { peerId: 'pAgg', roomIndex: 'pi', jitsiId: 'jAgg', pattern: HYDRA, isAggregator: true, playing: true },
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, playing: true },
     ] });
     assert.deepEqual(calls.mosaicCells.at(-1).cells.map(c => c.token), ['0']);
   } finally {
@@ -2635,8 +2673,8 @@ test('mosaic: the lit cell follows the turn', async () => {
   const { calls, bus, bot } = await mosaicBot();
   try {
     bus.rec.deliver({ type: 'roster', peers: [
-      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA },
-      { peerId: 'p1', roomIndex: '1', jitsiId: 'j1', pattern: HYDRA },
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, playing: true },
+      { peerId: 'p1', roomIndex: '1', jitsiId: 'j1', pattern: HYDRA, playing: true },
     ] });
 
     bot.applyProgramText('$ participants <0 1>\n');
@@ -2715,7 +2753,7 @@ test('mosaic: under Delayed Streaming a cell renders the code from backlogMs ago
 
     // p0 joins running one Hydra preamble at t=0.
     bus.rec.deliver({ type: 'roster', peers: [
-      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: 'await initHydra()\nosc(10).out()' },
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: 'await initHydra()\nosc(10).out()', playing: true },
     ] });
     assert.match(calls.mosaicCells.at(-1).cells[0].preamble, /osc\(10\)/);
 
@@ -2811,5 +2849,65 @@ test('a patterned effect argument arms the aggregator pattern tick; a constant o
   } finally {
     await bot.stop();
     assert.equal(bot.patternTicking(), false, 'stop() left the pattern tick running');
+  }
+});
+
+// --- backing voices (src/backing-core.js) -------------------------------------
+
+const BACKING_PATTERN = `'personal editor'\n$: s("bd sd")\n$: backing("bed.wav", true, true)`;
+
+test('a backing waits for its file, then loads once into the page', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
+  }, {}, 1024);
+  await bot.start();
+  try {
+    assert.ok(bus.rec.sent.some((m) => m.type === 'hello' && m.wantsBacking),
+      'the bus hello asks the sidecar for backing files');
+
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', playing: true, pattern: BACKING_PATTERN }] });
+    assert.deepEqual(bot.backingList(), [], 'no file yet: nothing to play');
+
+    bus.rec.deliver({ type: 'backing-file', fromIndex: '0', kind: 'audio', name: 'bed.wav', mime: 'audio/wav', data: 'AAAA' });
+    await new Promise((r) => setTimeout(r, 0));
+    const pushed = calls.backingSet.at(-1);
+    assert.equal(pushed.length, 1);
+    assert.equal(pushed[0].token, '0');
+    assert.equal(pushed[0].name, 'bed.wav');
+    assert.equal(pushed[0].loop, true);
+    assert.equal(pushed[0].turnOnly, true);
+    assert.equal(calls.backingLoad.length, 1, 'the bytes cross into the page once');
+    assert.equal(calls.backingLoad[0][2], 'AAAA');
+
+    // A metrics tick does not re-push an unchanged list.
+    const pushes = calls.backingSet.length;
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 12 } });
+    assert.equal(calls.backingSet.length, pushes);
+
+    // Stopping playback pauses the backing rather than dropping it, so Play
+    // resumes it, and the file is not sent again.
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { playing: false } });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(calls.backingSet.at(-1).length, 1);
+    assert.equal(calls.backingSet.at(-1)[0].playing, false);
+    assert.equal(calls.backingLoad.length, 1);
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('backing voices follow the assembled turn', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const rb = new RingBuffer(4096);
+  rb.write(new Float32Array(256).fill(0.1));
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, { 0: rb }, 4096);
+  await bot.start();
+  try {
+    await bot.readAndAssembleMasterBuffer(64);
+    assert.equal(calls.backingActive.at(-1), '0');
+  } finally {
+    await bot.stop();
   }
 });

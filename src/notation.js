@@ -250,8 +250,10 @@ export function miniToMondo(body) {
 // buffer, leaving string/template literals (which may legitimately contain `//`)
 // intact and preserving newlines so line counts do not shift. Only ever applied
 // to a `$:` voice and its continuation lines — a full-line comment elsewhere is
-// emitted verbatim by miniToMondo's pass-through branch.
-function stripInlineComments(s) {
+// emitted verbatim by miniToMondo's pass-through branch. Exported for
+// hydra-code.js, which gathers a `*name: code` button declaration by the same
+// rule.
+export function stripInlineComments(s) {
   let out = '';
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
@@ -273,7 +275,7 @@ function stripInlineComments(s) {
   return out;
 }
 
-function balanced(s) {
+export function balanced(s) {
   let depth = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];

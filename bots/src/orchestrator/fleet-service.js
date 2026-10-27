@@ -34,7 +34,7 @@
  */
 
 import http from 'node:http';
-import { mergeConfig, REMOTELY_TUNABLE } from '../shared/config.js';
+import { mergeConfig, ROOM_TUNABLE } from '../shared/config.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
 import { worstCaseLatency, percentile } from '../shared/stats.js';
 import { randomMasterScript, validateMasterScript, variationFor } from '../script-gen/index.js';
@@ -55,11 +55,12 @@ export const AGGREGATOR_BOT_ID = 99999;
 // turn every control connection into an unauthenticated one.
 export const CONTROL_TOKEN_HEADER = 'x-trussal-control-token';
 
-// The subset of config the in-room Conductor panel shows. It mirrors the admin
-// page's config form; endpoint keys (jitsiUrl, sidecarWsUrl, …) are deliberately
-// absent, so this room-bus path can never be used to repoint the fleet. The
-// write side accepts the same keys the admin API does (REMOTELY_TUNABLE), but
-// only these five are ever sent back to a browser.
+// The subset of config the in-room Conductor panel shows, read from that
+// room's own effective config (the fleet defaults with the meeting's overrides
+// on top). It mirrors the admin page's config form; endpoint keys (jitsiUrl,
+// sidecarWsUrl, …) are deliberately absent, so this room-bus path can never be
+// used to repoint the fleet. The write side accepts exactly these keys
+// (ROOM_TUNABLE) and stores them on the room, never on the fleet's cfg.
 export function conductorPanelSettings(cfg) {
   return {
     maxBots: cfg.maxBots,
@@ -132,6 +133,18 @@ export function describeBotConfig(source) {
   });
   return `botConfig applied: ${shown.join(', ')}`;
 }
+
+// Fleet-health inputs to computeMaxBots, over whichever bots' metrics are
+// passed: the whole host's for the VM-wide ceiling, one room's for its own.
+function healthSummary(samples) {
+  return {
+    medianFps: percentile(samples.map((m) => m.fps ?? 30), 50),
+    maxRamMb: Math.max(...samples.map((m) => (m.ramBytes ?? 0) / 1e6)),
+    medianLatencyMs: percentile(samples.map((m) => m.latencyMs ?? 0), 50) || 1,
+  };
+}
+
+const ROOM_POSITIVE_NUMBERS = ['maxBots', 'fpsMin', 'memLimitMb'];
 
 export class FleetService {
   constructor(cfg, { runner, connectSidecar, controlToken = null }) {
@@ -233,6 +246,16 @@ export class FleetService {
         // blip can cause — means the bot's Jitsi conference is gone even though
         // the process is alive.
         aggregatorLastJoinedAt: null,
+        // This meeting's Conductor-panel overrides (ROOM_TUNABLE keys only),
+        // layered over the fleet's cfg by #roomCfg. Per meeting so one room's
+        // panel never retunes another's bots; dropped with the room, and on a
+        // session reset, so a new meeting under the same name starts from the
+        // fleet defaults.
+        settings: {},
+        // computeMaxBots inputs over this room's own bots, refreshed each
+        // health tick (null until any of them reports). Kept as the summary
+        // rather than a ceiling so a changed maxBots/fpsMin applies at once.
+        healthSummary: null,
         // Serializes #ensureAggregator/#stopAggregator so a rejoin landing mid-
         // teardown queues behind the in-flight stop instead of racing it.
         // Without this, a rejoin's start() (which force-removes any stale
@@ -378,7 +401,11 @@ export class FleetService {
         type: 'hello',
         jitsiId: `fleet-${name}`,
         displayName: 'fleet-service',
-        isFleet: true
+        isFleet: true,
+        // Keep walkie-talkie humans on our roster (see #setWalkie) instead of
+        // having the relay hide them behind a peer-leave like it does for
+        // everyone else.
+        seesWalkie: true
       }),
       onMessage: (msg) => this.handleBusMessage(msg, name).catch((err) => {
         console.error(`[fleet] bus message failed (room ${name}):`, err.message);
@@ -411,6 +438,24 @@ export class FleetService {
     this.rooms.delete(name);
   }
 
+  // A room's effective config: the fleet's cfg with that meeting's own
+  // Conductor overrides on top. Everything that shapes one room's bots reads
+  // this, not this.cfg, so a panel in one meeting cannot reach another's.
+  #roomCfg(room) {
+    const state = this.#existingRoom(room);
+    if (!state || Object.keys(state.settings).length === 0) return this.cfg;
+    return mergeConfig(state.settings, this.cfg);
+  }
+
+  // How many bots this room may hold: its own maxBots, scaled down by its own
+  // health against its own fps/memory thresholds. The host ceiling
+  // (activeCeiling) applies on top of this, shared by every room.
+  #roomCeiling(room) {
+    const cfg = this.#roomCfg(room);
+    const summary = this.#existingRoom(room)?.healthSummary;
+    return summary ? computeMaxBots(summary, cfg) : cfg.maxBots;
+  }
+
   // Lookup that never creates. The read/cleanup paths must not resurrect a room
   // that #detachRoom just discarded: a phantom entry has no bus connection, so
   // it can never learn about another join, leave or session-reset, yet healthTick
@@ -438,6 +483,9 @@ export class FleetService {
         break;
       case 'peer-leave':
         this.#untrackPeer(room, msg.peerId);
+        break;
+      case 'peer-walkie':
+        this.#setWalkie(room, msg.peerId, !!msg.on);
         break;
       case 'fleet-request':
         await this.#handleFleetRequest(room, msg);
@@ -498,7 +546,13 @@ export class FleetService {
         // and, worse, keep #evaluateMeetingEnd from ever arming again — pinning
         // the room until a bus reconnect happens to reconcile it.
         const resetState = this.#existingRoom(room);
-        if (resetState) resetState.presentIndices.clear();
+        if (resetState) {
+          resetState.presentIndices.clear();
+          // The next meeting under this name gets the fleet defaults, not the
+          // last one's Conductor settings.
+          resetState.settings = {};
+          resetState.healthSummary = null;
+        }
         // The sidecar broadcasts this when the room becomes fleet-only (every
         // real participant gone) — the meeting is genuinely over, even if a
         // human rejoins fast enough to cancel our own meetingEndGraceMs timer
@@ -518,9 +572,12 @@ export class FleetService {
     if (peer.roomIndex == null) return;
     const state = this.#roomState(room);
     const idx = String(peer.roomIndex);
-    state.presentIndices.set(idx, { isBot: !!peer.isBot, peerId: peer.peerId });
-    // A returning owner cancels their cluster's death sentence.
-    if (!peer.isBot && state.ownerTimers.has(idx)) {
+    const walkie = !peer.isBot && !!peer.walkie;
+    state.presentIndices.set(idx, { isBot: !!peer.isBot, peerId: peer.peerId, walkie });
+    // A returning owner cancels their cluster's death sentence; one who is
+    // (still) in Walkie Talkie Mode has left as far as their cluster knows.
+    if (walkie) this.#onOwnerLeft(room, idx);
+    else if (!peer.isBot && state.ownerTimers.has(idx)) {
       clearTimeout(state.ownerTimers.get(idx));
       state.ownerTimers.delete(idx);
     }
@@ -560,6 +617,28 @@ export class FleetService {
       if (info.peerId !== peerId) continue;
       state.presentIndices.delete(idx);
       if (!info.isBot) this.#onOwnerLeft(room, idx);
+      return;
+    }
+  }
+
+  // Walkie Talkie Mode (src/walkie-talkie.js): the relay has told every other
+  // participant this human left, and their cluster follows suit — the owner-
+  // leave grace starts, and turning the mode off cancels it like a rejoin
+  // would. They stay in presentIndices as a human, though, so
+  // #evaluateMeetingEnd still counts them: a room where every human is in
+  // Walkie Talkie Mode is not a finished meeting.
+  #setWalkie(room, peerId, on) {
+    const state = this.#existingRoom(room);
+    if (!state) return;
+    for (const [idx, info] of state.presentIndices.entries()) {
+      if (info.peerId !== peerId || info.isBot) continue;
+      info.walkie = on;
+      if (on) {
+        this.#onOwnerLeft(room, idx);
+      } else if (state.ownerTimers.has(idx)) {
+        clearTimeout(state.ownerTimers.get(idx));
+        state.ownerTimers.delete(idx);
+      }
       return;
     }
   }
@@ -679,7 +758,7 @@ export class FleetService {
       action: 'conductor-settings',
       ...(typeof requestId === 'string' ? { requestId } : {}),
       ...(applied ? { applied: true } : {}),
-      settings: conductorPanelSettings(this.cfg),
+      settings: conductorPanelSettings(this.#roomCfg(room)),
     });
   }
 
@@ -697,20 +776,37 @@ export class FleetService {
       this.#sendConductorSettingsError(room, requestId, 'settings must be an object');
       return;
     }
-    // Same allowlist as the admin API: this path is unauthenticated too, so it
-    // must not become a second way to change where the fleet connects. See the
-    // comment on REMOTELY_TUNABLE.
-    const blocked = Object.keys(settings).filter((key) => !REMOTELY_TUNABLE.has(key));
+    // Narrower than the admin API: only the keys that shape THIS room's own
+    // bots (see ROOM_TUNABLE). The path is unauthenticated, and any fleet-wide
+    // key set from here would change every other meeting.
+    const blocked = Object.keys(settings).filter((key) => !ROOM_TUNABLE.has(key));
     if (blocked.length) {
       this.#sendConductorSettingsError(room, requestId,
-        `not remotely configurable: ${blocked.join(', ')}`);
+        `not configurable from a meeting: ${blocked.join(', ')}`);
       return;
     }
+    // A NaN or zero here would turn this room's ceiling into NaN (no spawns,
+    // ever) rather than fail visibly.
+    const badNumber = ROOM_POSITIVE_NUMBERS.find((key) =>
+      key in settings && !(Number.isFinite(settings[key]) && settings[key] > 0));
+    if (badNumber) {
+      this.#sendConductorSettingsError(room, requestId, `${badNumber} must be a positive number`);
+      return;
+    }
+    const state = this.#existingRoom(room);
+    if (!state) return;
     try {
-      await this.applyConfig(settings);
+      // Validates (unknown roles throw) before anything is stored.
+      mergeConfig(settings, this.cfg);
+      const next = { ...state.settings, ...settings };
+      if (settings.roles) next.roles = { ...state.settings.roles, ...settings.roles };
+      state.settings = next;
+      const ceiling = this.#roomCeiling(room);
+      if (this.#clusterSize(room) > ceiling) await this.#shrinkRoomTo(room, ceiling);
+      this.#redistribute(room);
       this.#sendConductorSettings(room, requestId, true);
     } catch (err) {
-      // mergeConfig rejects unknown roles/types, and a shrink can fail mid-way;
+      // mergeConfig rejects unknown roles, and a shrink can fail mid-way;
       // either way the panel needs a reason rather than a silent no-op.
       this.#sendConductorSettingsError(room, requestId, err.message);
     }
@@ -760,8 +856,10 @@ export class FleetService {
    */
   async spawnCluster(ownerIndex, count, { room, notes = [], configNote = null } = {}) {
     requireRoom(room, 'spawnCluster');
-    const headroom = Math.max(0, this.activeCeiling - this.bots.size);
-    const toSpawn = Math.min(count, headroom);
+    const hostHeadroom = Math.max(0, this.activeCeiling - this.bots.size);
+    const roomCeiling = this.#roomCeiling(room);
+    const roomHeadroom = Math.max(0, roomCeiling - this.#clusterSize(room));
+    const toSpawn = Math.min(count, hostHeadroom, roomHeadroom);
     for (let i = 0; i < toSpawn; i++) {
       // `docker run -d` (inside #startBot) returns as soon as the container
       // is created — long before Chromium, the Jitsi join, and the CDN
@@ -774,7 +872,9 @@ export class FleetService {
     }
     const reason = notes.filter(Boolean);
     if (toSpawn < count) {
-      reason.push(`host ceiling ${this.activeCeiling} reached — ${this.bots.size} bots running across all rooms`);
+      reason.push(roomHeadroom < hostHeadroom
+        ? `this meeting's limit of ${roomCeiling} bots reached`
+        : `host ceiling ${this.activeCeiling} reached — ${this.bots.size} bots running across all rooms`);
     }
     const status = {
       type: 'fleet-status',
@@ -785,7 +885,7 @@ export class FleetService {
       // The room's OWN cluster size — this goes to one room's studio, where a
       // count that silently included other meetings' bots is just wrong.
       fleetSize: this.#clusterSize(room),
-      ceiling: this.activeCeiling,
+      ceiling: Math.min(this.activeCeiling, roomCeiling),
       // What the requester's botConfig came to. Its own field, not folded into
       // `reason`: a config that applied cleanly is not a problem report, and
       // `reason` is what the studio and the sidecar's log both read as one.
@@ -1054,6 +1154,8 @@ export class FleetService {
       aggregatorRunning: state.aggregatorRunning,
       participants: state.presentIndices.size,
       bots: this.#clusterSize(state.room),
+      // The meeting's own Conductor overrides (empty: fleet defaults).
+      settings: { ...state.settings, ...(state.settings.roles ? { roles: { ...state.settings.roles } } : {}) },
     }));
   }
 
@@ -1292,6 +1394,7 @@ export class FleetService {
     // What this bot plays: its human's snapshot shaped by their botConfig, or
     // the fleet-wide master when they never sent code. varyHydra stays an
     // admin-side override of the visual only, as before.
+    const cfg = this.#roomCfg(room);
     const configured = source && bot
       ? botScriptFor(source, {
         index: this.#clusterOrdinalOf(bot),
@@ -1301,7 +1404,7 @@ export class FleetService {
       })
       : this.master;
 
-    const master = this.cfg.varyHydra
+    const master = cfg.varyHydra
       ? {
         strudel: configured.strudel,
         hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra,
@@ -1312,16 +1415,21 @@ export class FleetService {
       // The bot being started is not yet in `bots` (see #startBot), matching the
       // previous single-room behaviour where it did not count itself either.
       botCount: Math.max(1, roomBots.length || 1),
-      roles: this.cfg.roles,
+      roles: cfg.roles,
       wclMs: latencies.length ? worstCaseLatency(latencies) : 0,
       latencyMs: m?.latencyMs ?? 0,
       jitterMs: m?.jitterMs ?? 0,
-      staggerSubdivisions: this.cfg.staggerSubdivisions,
+      staggerSubdivisions: cfg.staggerSubdivisions,
     });
   }
 
-  #redistribute() {
-    for (const bot of this.bots.values()) bot.script = this.#variationFor(bot.botId, bot.room);
+  // Every bot, or only `room`'s: a meeting's own settings change must not
+  // regenerate other meetings' scripts.
+  #redistribute(room = null) {
+    for (const bot of this.bots.values()) {
+      if (room != null && bot.room !== String(room)) continue;
+      bot.script = this.#variationFor(bot.botId, bot.room);
+    }
   }
 
   setMasterScript(json) {
@@ -1332,7 +1440,11 @@ export class FleetService {
     return { ok: true };
   }
 
-  /** Admin config changes. maxBots is a ceiling here, not a target size. */
+  /**
+   * Admin config changes: the fleet-wide defaults every room starts from, and
+   * the host ceiling. maxBots is a ceiling here, not a target size. A room's
+   * own Conductor overrides (#roomCfg) stay layered on top.
+   */
   async applyConfig(overrides) {
     this.cfg = mergeConfig(overrides, this.cfg);
     this.activeCeiling = Math.min(this.activeCeiling, this.cfg.maxBots);
@@ -1341,19 +1453,26 @@ export class FleetService {
   }
 
   async #shrinkTo(target) {
-    // Newest bots go first; owners keep their earliest cluster members.
-    const ids = [...this.bots.keys()].sort((a, b) => b - a);
+    // The host ceiling is shared, but which meeting gives bots back is not
+    // decided by who spawned last: the room holding the most bots gives up its
+    // newest, one at a time, so a meeting's own load costs it its own bots
+    // before anyone else's. Owners keep their earliest cluster members.
     const hit = new Map(); // room → how many of its bots the ceiling took
-    for (const id of ids) {
-      if (this.bots.size <= target) break;
-      const room = this.bots.get(id)?.room;
-      await this.#stopBot(id);
-      if (room != null) hit.set(room, (hit.get(room) ?? 0) + 1);
+    while (this.bots.size > target) {
+      const counts = new Map();
+      for (const b of this.bots.values()) counts.set(b.room, (counts.get(b.room) ?? 0) + 1);
+      let victim = null;
+      for (const b of this.bots.values()) {
+        const mine = counts.get(b.room);
+        const theirs = victim ? counts.get(victim.room) : -1;
+        if (mine > theirs || (mine === theirs && b.botId > victim.botId)) victim = b;
+      }
+      await this.#stopBot(victim.botId);
+      hit.set(victim.room, (hit.get(victim.room) ?? 0) + 1);
     }
-    // The ceiling is VM-wide and newest-first, so a shrink driven by ONE busy
-    // meeting routinely deletes a different meeting's bots. #stopBot is silent,
-    // so without this the other room's studio just shows bots disappearing from
-    // myClusterBots() with no explanation anywhere.
+    // A host shrink can still reach a meeting that is level with the busiest.
+    // #stopBot is silent, so without this that room's studio just shows bots
+    // disappearing from myClusterBots() with no explanation anywhere.
     for (const [room, removed] of hit) {
       this.#busSend(room, {
         type: 'fleet-status',
@@ -1363,6 +1482,26 @@ export class FleetService {
         reason: `host ceiling ${target} reached — bots reduced across all rooms`,
       });
     }
+  }
+
+  // A room over its OWN ceiling (its Conductor maxBots, or its own health
+  // against its own thresholds) loses only its own newest bots.
+  async #shrinkRoomTo(room, target) {
+    const ids = this.#botsInRoom(room).map((b) => b.botId).sort((a, b) => b - a);
+    let removed = 0;
+    for (const id of ids) {
+      if (this.#clusterSize(room) <= target) break;
+      await this.#stopBot(id);
+      removed++;
+    }
+    if (!removed) return;
+    this.#busSend(room, {
+      type: 'fleet-status',
+      action: 'remove',
+      removed,
+      fleetSize: this.#clusterSize(room),
+      reason: `this meeting's limit of ${target} bots reached`,
+    });
   }
 
   /** Same shape createAdminServer/mcp-observer already consume, plus cluster fields. */
@@ -1412,13 +1551,20 @@ export class FleetService {
     const fleet = [...this.metrics.values()];
     if (fleet.length === 0) return;
 
-    const summary = {
-      medianFps: percentile(fleet.map((m) => m.fps ?? 30), 50),
-      maxRamMb: Math.max(...fleet.map((m) => (m.ramBytes ?? 0) / 1e6)),
-      medianLatencyMs: percentile(fleet.map((m) => m.latencyMs ?? 0), 50) || 1,
-    };
-    this.activeCeiling = computeMaxBots(summary, this.cfg);
+    this.activeCeiling = computeMaxBots(healthSummary(fleet), this.cfg);
     if (this.bots.size > this.activeCeiling) await this.#shrinkTo(this.activeCeiling);
+
+    // Then each meeting against its own maxBots/fpsMin/memLimitMb, over its
+    // own bots' metrics only: one room's struggling cluster or Conductor
+    // thresholds shrink that room, not its neighbours.
+    for (const state of [...this.rooms.values()]) {
+      const samples = this.#botsInRoom(state.room)
+        .map((b) => this.metrics.get(b.botId))
+        .filter(Boolean);
+      state.healthSummary = samples.length ? healthSummary(samples) : null;
+      const ceiling = this.#roomCeiling(state.room);
+      if (this.#clusterSize(state.room) > ceiling) await this.#shrinkRoomTo(state.room, ceiling);
+    }
 
     for (const m of fleet) {
       const existing = this.bots.get(m.botId);
@@ -1430,7 +1576,9 @@ export class FleetService {
         console.warn(`[fleet] replacing bot ${m.botId}: ${verdict.reason}`);
         const { ownerIndex, room } = existing;
         await this.#stopBot(m.botId);
-        if (this.bots.size < this.activeCeiling) await this.#startBot(m.botId, room, ownerIndex);
+        if (this.bots.size < this.activeCeiling && this.#clusterSize(room) < this.#roomCeiling(room)) {
+          await this.#startBot(m.botId, room, ownerIndex);
+        }
       }
     }
   }

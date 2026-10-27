@@ -1,0 +1,311 @@
+{
+  "metaprogram": "$ participants <0 1 0a 0b>\n# ring\n# cycles \"wcl\" 20\n",
+  "humans": {
+    "0": {
+      "displayName": "Ada",
+      "code": {
+        "hydra": "osc(10, 0.1, 1.2).kaleid(4).out()",
+        "strudel": "$: s(\"kit*4\").n(\"<0 1 2 1>\")\n$: n(\"<0 2 4 7>*2\").scale(\"C4:minor\").s(\"sawtooth\").lpf(800)\n$: backing(\"ada-clap.wav\", true, true)\n$: breakout({\"name\":\"<duet main>\", \"participants\": [\"0\", \"1\"]}).slow(16)",
+        "text": "$: word(\"<hello welcome ~ friends>\").slow(2).out(\"lobby screen\")",
+        "css": "$: css(`.ts-chip { &:hover { border-color: #ffffff } }`)",
+        "reactions": "$: reaction(\"<la ~ c ~>\").slow(4)",
+        "samples": {
+          "kit": [
+            {
+              "name": "kick.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/bd/BT0A0A7.wav"
+            },
+            {
+              "name": "snare.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/sn/ST0T0S0.wav"
+            },
+            {
+              "name": "hat.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/hh/000_hh3closedhh.wav"
+            }
+          ],
+          "pics": [
+            {
+              "name": "dot.png",
+              "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+            }
+          ]
+        },
+        "files": {
+          "images": [
+            {
+              "name": "ada-logo.svg",
+              "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjgiIGZpbGw9IiNlODQiLz48L3N2Zz4="
+            },
+            {
+              "name": "ada-dot.png",
+              "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+            }
+          ],
+          "video": [
+            {
+              "name": "ada-flower.mp4",
+              "src": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+            }
+          ],
+          "text": [
+            {
+              "name": "ada-notes.txt",
+              "src": "data:text/plain;base64,V2VsY29tZSB0byB0aGUgc2Vzc2lvbi4KUGxlYXNlIGtlZXAgeW91ciBtaWMgbXV0ZWQgYmV0d2VlbiBwaWVjZXMuCg=="
+            }
+          ],
+          "csv": [
+            {
+              "name": "adaweather.csv",
+              "src": "data:text/csv;base64,aG91cix0ZW1wLHdpbmQKMCwxMiwzCjEsMTEsNAoyLDEwLDYKMyw5LDUK"
+            }
+          ],
+          "tsv": [
+            {
+              "name": "adavelocity.tsv",
+              "src": "data:text/tab-separated-values;base64,c3RlcAl2ZWxvY2l0eQowCTAuOQoxCTAuNAoyCTAuNwozCTAuMgo="
+            }
+          ],
+          "json": [
+            {
+              "name": "adatides.json",
+              "src": "data:application/json;base64,eyJ0aWRlcyI6IFsxLjIsIDEuOCwgMi40LCAxLjksIDEuMV19"
+            }
+          ],
+          "other": [
+            {
+              "name": "ada-clap.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/cp/HANDCLP0.wav"
+            }
+          ]
+        }
+      },
+      "personalTheme": {
+        "primaryColor": "#f4f1ea",
+        "secondaryColor": "#1b1b2f",
+        "invert": false,
+        "darkMode": true,
+        "fontFamily": "Georgia",
+        "fontSize": 1.25,
+        "disableCssChanges": false
+      },
+      "gestureAndLandmarkConfig": {
+        "gestureMappings": [
+          {
+            "trigger": "smile",
+            "action": "play"
+          },
+          {
+            "trigger": "thumbsUp",
+            "action": "stop"
+          },
+          {
+            "trigger": "browRaise",
+            "action": "regex-swap",
+            "regex": "kit\\*4",
+            "replacement": "kit*8"
+          },
+          {
+            "trigger": "leftEyeClosed2s",
+            "action": "enable-landmark-gesture-mode"
+          }
+        ],
+        "virtualKeyboardEnabled": false,
+        "headCursorEnabled": true,
+        "gestureDetectionEnabled": true,
+        "cursorSpeed": 0.2,
+        "cursorGain": 1.5,
+        "meetingLoadSensitivity": 0.5
+      },
+      "enableMediaPipe": true,
+      "customEmoji": [
+        {
+          "name": "ada_wave.svg",
+          "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjgiIGZpbGw9IiNlODQiLz48L3N2Zz4="
+        },
+        {
+          "name": "ada_dot.png",
+          "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+        }
+      ]
+    },
+    "1": {
+      "displayName": "Bashir",
+      "code": {
+        "strudel": "$: note(\"<c3 eb3 g3 bb3>\").s(\"triangle\").room(0.6)",
+        "files": {
+          "images": [
+            {
+              "name": "bashir-logo.svg",
+              "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjgiIGZpbGw9IiNlODQiLz48L3N2Zz4="
+            }
+          ]
+        }
+      },
+      "personalTheme": {
+        "primaryColor": "",
+        "secondaryColor": "",
+        "invert": true,
+        "darkMode": false,
+        "fontFamily": "Verdana",
+        "fontSize": 1,
+        "disableCssChanges": true
+      },
+      "gestureAndLandmarkConfig": {
+        "gestureDetectionEnabled": false
+      },
+      "enableMediaPipe": false
+    }
+  },
+  "bots": {
+    "0a": {
+      "displayName": "Ada's Drummer",
+      "code": {
+        "strudel": "$: s(\"kit\").n(\"0 ~ 1 [2 2]\").gain(0.8)",
+        "samples": {
+          "kit": [
+            {
+              "name": "kick.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/bd/BT0A0A7.wav"
+            },
+            {
+              "name": "snare.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/sn/ST0T0S0.wav"
+            },
+            {
+              "name": "hat.wav",
+              "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/hh/000_hh3closedhh.wav"
+            }
+          ]
+        }
+      }
+    },
+    "0b": {
+      "displayName": "Ada's Painter",
+      "code": {
+        "hydra": "noise(3, 0.2).color(0.9, 0.4, 0.6).out()",
+        "strudel": "$: n(\"<0 3 5>\").scale(\"C2:minor\").s(\"sine\").slow(2)"
+      }
+    }
+  },
+  "meetingChat": {
+    "Ada": {
+      "text": [
+        "Welcome, everyone!",
+        "The score for tonight is attached.",
+        "React with :ada_wave: when you are ready."
+      ],
+      "files": {
+        "images": [
+          {
+            "name": "chat-logo.svg",
+            "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjgiIGZpbGw9IiNlODQiLz48L3N2Zz4="
+          },
+          {
+            "name": "chat-dot.png",
+            "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+          }
+        ],
+        "video": [
+          {
+            "name": "chat-flower.mp4",
+            "src": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+          }
+        ],
+        "text": [
+          {
+            "name": "chat-notes.txt",
+            "src": "data:text/plain;base64,V2VsY29tZSB0byB0aGUgc2Vzc2lvbi4KUGxlYXNlIGtlZXAgeW91ciBtaWMgbXV0ZWQgYmV0d2VlbiBwaWVjZXMuCg=="
+          }
+        ],
+        "csv": [
+          {
+            "name": "chatweather.csv",
+            "src": "data:text/csv;base64,aG91cix0ZW1wLHdpbmQKMCwxMiwzCjEsMTEsNAoyLDEwLDYKMyw5LDUK"
+          }
+        ],
+        "tsv": [
+          {
+            "name": "chatvelocity.tsv",
+            "src": "data:text/tab-separated-values;base64,c3RlcAl2ZWxvY2l0eQowCTAuOQoxCTAuNAoyCTAuNwozCTAuMgo="
+          }
+        ],
+        "json": [
+          {
+            "name": "chattides.json",
+            "src": "data:application/json;base64,eyJ0aWRlcyI6IFsxLjIsIDEuOCwgMi40LCAxLjksIDEuMV19"
+          }
+        ],
+        "other": [
+          {
+            "name": "chat-clap.wav",
+            "src": "https://raw.githubusercontent.com/tidalcycles/Dirt-Samples/master/cp/HANDCLP0.wav"
+          }
+        ]
+      }
+    },
+    "Bashir": {
+      "text": "Ready when you are.",
+      "files": {}
+    },
+    "Ada's Drummer": {
+      "text": "Counting us in..."
+    }
+  },
+  "applySettingsToExistingParticipants": false,
+  "alternatives": [
+    {
+      "settings": {
+        "metaprogram": "$ participants <0 1 0a 0b>\n# ring\n# cycles \"wcl\" 8\n",
+        "humans": {
+          "1": {
+            "displayName": "Bashir",
+            "code": {
+              "strudel": "$: note(\"<c4 eb4 g4 bb4>*2\").s(\"triangle\").room(0.3)",
+              "language": "punctual",
+              "source": "-- Bashir's second section: a pulsing circle and a low drone\ncircle [0, 0] (0.2 + 0.1 * osc 0.5) * [0.4, 0.8, 1] >> add;\nsin [110, 165] * 0.08 >> audio\n"
+            },
+            "personalTheme": {
+              "darkMode": true,
+              "fontSize": 1.5
+            },
+            "enableMediaPipe": false
+          }
+        },
+        "meetingChat": {
+          "Ada": {
+            "text": "Second section - double time."
+          }
+        }
+      },
+      "timeout": 120,
+      "interval": 240
+    },
+    {
+      "settings": {
+        "metaprogram": "$ participants <0 1 0a 0b>\n# ring\n# cycles \"wcl\" 20\n",
+        "humans": {
+          "1": {
+            "displayName": "Bashir",
+            "code": {
+              "strudel": "$: note(\"<c3 eb3 g3 bb3>\").s(\"triangle\").room(0.6)"
+            },
+            "personalTheme": {
+              "invert": true,
+              "fontFamily": "Verdana",
+              "disableCssChanges": true
+            },
+            "enableMediaPipe": false
+          }
+        },
+        "meetingChat": {
+          "Ada": {
+            "text": "Back to the opening."
+          }
+        }
+      },
+      "timeout": 240,
+      "interval": 240
+    }
+  ]
+}

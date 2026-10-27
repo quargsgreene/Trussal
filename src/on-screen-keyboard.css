@@ -154,6 +154,8 @@
   gap: 3px;
   padding: 8px;
   background: var(--trussal-primary, #eeeeee);
+  /* Anchors the 🌐 writing-system menu, which is laid over the keys. */
+  position: relative;
 }
 /* Shown only when it holds suggestions (see _updatePredictions) — an empty
    row here was the "rectangle that does nothing" between the title bar and
@@ -253,7 +255,113 @@
   background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
   pointer-events: none;
 }
-.ts-kbd-label { pointer-events: none; font-size: calc(11px * var(--trussal-font-scale, 1)); color: inherit; }
+/* background: transparent — the deployed theme's "body *" background rule
+   (see .ts-kbd-header) would otherwise paint the label as a pale box on a
+   dark (selected or hovered) key. */
+.ts-kbd-label { pointer-events: none; font-size: calc(11px * var(--trussal-font-scale, 1)); color: inherit; background: transparent; }
+
+/* IPA layout (on-screen-keyboard.js's _ipaRows). Symbols get a larger glyph
+   than the QWERTY legends — "ɪ" against "ɨ" or a diacritic on its dotted
+   circle is unreadable at 11px — and a short last row is padded by an inert
+   spacer so its keys keep the width of the rows above. */
+.ts-kbd-spacer { flex: var(--tsk-flex, 1); min-width: 0; }
+.ts-kbd-ipa-key .ts-kbd-label {
+  font-size: calc(15px * var(--trussal-font-scale, 1));
+  font-family: "Charis SIL", "Doulos SIL", "Gentium Plus", "Noto Sans", "DejaVu Sans", "Segoe UI", var(--trussal-font, sans-serif);
+}
+#trussal-kbd-panel.ts-kbd-ipa .ts-kbd-key[data-k^="IPAPage:"] .ts-kbd-label {
+  font-size: calc(10px * var(--trussal-font-scale, 1));
+  white-space: nowrap;
+}
+/* The Impossible page: the chart's shaded cells, hatched the way the chart
+   shades them but pressable like any key. One class deep, so hover and the
+   press flash (.ts-kbd-key:hover, .ts-kbd-key.ts-kbd-flash) still win. */
+.ts-kbd-impossible-key {
+  background:
+    repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--trussal-secondary, #111111) 16%, transparent) 0 3px,
+      transparent 3px 7px),
+    var(--trussal-primary, #eeeeee);
+}
+
+/* Writing-system layouts (on-screen-keyboard.js's _scriptRows). Letters get
+   the IPA keys' larger glyph — a Devanagari vowel sign or a Thaana fili is
+   unreadable at 11px — and the font stack falls through to whichever Noto
+   family covers the script; emoji use the platform's colour emoji font. */
+.ts-kbd-script-key .ts-kbd-label {
+  font-size: calc(15px * var(--trussal-font-scale, 1));
+  font-family: "Noto Sans", "Noto Sans Symbols 2", "Segoe UI", "Segoe UI Historic", var(--trussal-font, sans-serif);
+}
+#trussal-kbd-panel[data-system="emoji"] .ts-kbd-script-key .ts-kbd-label {
+  font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+}
+#trussal-kbd-panel .ts-kbd-key[data-k^="SysPage:"] .ts-kbd-label {
+  font-size: calc(10px * var(--trussal-font-scale, 1));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ts-kbd-key[data-k="Globe"] .ts-kbd-label { font-size: calc(14px * var(--trussal-font-scale, 1)); }
+
+/* The 🌐 menu: a grid of writing systems over the key rows, each entry a
+   dwell target (the ::after fill is the same dwell progress as a key's). */
+.ts-kbd-menu {
+  position: absolute;
+  inset: 8px;
+  z-index: 5;
+  display: none;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  grid-auto-rows: minmax(30px, 1fr);
+  gap: 3px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background: var(--trussal-primary, #eeeeee);
+}
+.ts-kbd-menu.ts-kbd-menu-on { display: grid; }
+.ts-kbd-menu-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 6px;
+  border-radius: 5px;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+}
+.ts-kbd-menu-opt:hover, .ts-kbd-menu-opt.ts-kbd-dwelling, .ts-kbd-menu-opt.ts-kbd-mod-on {
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee);
+}
+.ts-kbd-menu-opt::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 100%;
+  height: calc(var(--dwell,0) * 100%);
+  background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
+  pointer-events: none;
+}
+.ts-kbd-menu-sample, .ts-kbd-menu-label { background: transparent; }
+.ts-kbd-menu-sample {
+  flex: 0 0 auto;
+  min-width: 1.4em;
+  text-align: center;
+  font-size: calc(15px * var(--trussal-font-scale, 1));
+  pointer-events: none;
+}
+.ts-kbd-menu-label {
+  font-size: calc(11px * var(--trussal-font-scale, 1));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
 
 /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the Keys button
    sits flush beside the Face button whether or not the facial-gesture
@@ -280,3 +388,23 @@
   background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
   pointer-events: none;
 }
+
+/* Uploaded emoji (the emoji keyboard's "Mine" page): the picture fills the
+   key; in delete mode the keys are struck through so a press reads as
+   "remove". Dropping a file anywhere on the panel outlines it. */
+.ts-kbd-emoji-img {
+  display: block;
+  max-height: 1.6em;
+  max-width: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.ts-kbd-key.ts-kbd-own-emoji.ts-kbd-deleting { outline: 2px dashed var(--trussal-secondary, #111111); outline-offset: -4px; opacity: 0.7; }
+.ts-kbd-hint {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: calc(11px * var(--trussal-font-scale, 1));
+  color: color-mix(in srgb, var(--trussal-secondary, #111111) 65%, transparent);
+}
+#trussal-kbd-panel.ts-kbd-dropping { outline: 3px dashed var(--trussal-secondary, #111111); outline-offset: -3px; }

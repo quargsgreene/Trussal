@@ -43,6 +43,22 @@
 //   - anything left over — a plain pattern with no label at all — is wrapped
 //     as its own anonymous `$:` voice, which is Strudel's own mechanism for
 //     collecting an unnamed voice into the stack.
+//
+// Two more shapes a performer writes without thinking, each of which used to
+// take the WHOLE room program down with a SyntaxError once fx was non-empty
+// (as it always is under JPattern, whose slot gate is appended to every
+// voice):
+//   - several labeled voices in one paragraph, no blank line between them
+//     (`$: s("bd")\n$: s("hh")`). Wrapping from the first label to the end
+//     nested the later labels inside its parens. Each top-level label now
+//     starts its own statement, found by a scan that skips strings, template
+//     literals, comments and bracketed code, so a `color: red` line inside a
+//     css() template or a `case x:` inside a function is never mistaken for
+//     one.
+//   - a `//` comment: on a line of its own it was wrapped as a pattern
+//     (`$: (// …)`), and at the end of a body it swallowed the wrapper's
+//     closing paren. Comment-only lines now stay bare, and the paren goes on
+//     a line of its own whenever a comment could reach it.
 
 const LABEL_AT_START_RE = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/;
 const LABEL_ANYWHERE_RE = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m;
@@ -54,33 +70,124 @@ const LINE_DECL_RE = /^\s*(let|const|var|function\b|class\b)/;
 // voice hands its return value to Strudel as if it were a pattern.
 const CAPABILITY_DECL_LINE_RE = /^await\s+init(?:TextCycles|Css)\s*\(\s*\)\s*;?$/;
 
+const COMMENT_LINE_RE = /^(\/\/.*|\/\*.*\*\/)$/;
+
 function isBareDeclaration(text) {
   if (DECL_RE.test(text)) return true;
   return text.split('\n').every((line) => {
     const t = line.trim();
-    return t === '' || CAPABILITY_DECL_LINE_RE.test(t);
+    return t === '' || CAPABILITY_DECL_LINE_RE.test(t) || COMMENT_LINE_RE.test(t);
   });
 }
 
-// Split preamble from trailing expression for a paragraph with no label
-// anywhere: `let x = 5\nn(x)` labels only the expression, since wrapping a
-// declaration in `$: (...)` is a SyntaxError (declarations are statements).
-function splitDeclAndExpr(code) {
-  const lines = code.split('\n');
-  let lastDeclLine = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (LINE_DECL_RE.test(lines[i])) lastDeclLine = i;
+// `(body)` as a grouping expression. A `//` on the body's last line would
+// comment out a closing paren on the same line, so then it goes on the next.
+// (A `//` inside a string, `"https://…"`, only costs a harmless newline.)
+function group(body) {
+  const lastLine = body.slice(body.lastIndexOf('\n') + 1);
+  return lastLine.includes('//') ? `(${body}\n)` : `(${body})`;
+}
+
+// Walk `text` once, calling `atBreak(i, tail)` at every newline that sits at
+// top level — outside any string, template literal, comment or bracket.
+// `tail` is the last two characters of code before it (whitespace and
+// comments skipped; a string counts only by its closing quote, so a `.` or `,`
+// inside one is never read as an open end).
+function forEachTopLevelBreak(text, atBreak) {
+  let depth = 0;
+  let mode = null; // null | 'line' | 'block' | '"' | "'" | '`'
+  let tail = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const next = text[i + 1];
+    if (mode === 'line') { if (c === '\n') mode = null; else continue; }
+    else if (mode === 'block') { if (c === '*' && next === '/') { mode = null; i++; } continue; }
+    else if (mode) {
+      if (c === '\\') { i++; continue; }
+      if (c === mode) { mode = null; tail = c; }
+      continue;
+    }
+    if (c === '\n') {
+      if (depth === 0) atBreak(i, tail);
+      continue;
+    }
+    if (c === '/' && next === '/') { mode = 'line'; i++; continue; }
+    if (c === '/' && next === '*') { mode = 'block'; i++; continue; }
+    if (c === ' ' || c === '\t' || c === '\r') continue;
+    tail = tail.slice(-1) + c;
+    if (c === '"' || c === "'" || c === '`') { mode = c; continue; }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if ((c === ')' || c === ']' || c === '}') && depth > 0) depth--;
   }
-  if (lastDeclLine === -1) return null;
-  let exprStart = -1;
-  for (let i = lastDeclLine + 1; i < lines.length; i++) {
-    if (lines[i].trim()) { exprStart = i; break; }
-  }
-  if (exprStart === -1) return null;
-  return {
-    preamble: lines.slice(0, exprStart).join('\n').trim(),
-    expr: lines.slice(exprStart).join('\n').trim(),
-  };
+}
+
+// JS's own rule for when a line break does NOT end a statement, for the
+// shapes a performer actually writes: the code before it is left open (a
+// trailing `.`, operator or comma), or the next line of code — blank lines
+// and comments skipped — carries on the one above, above all the `.method(`
+// line every Strudel chain is written in. `*` and `/` are left out of the
+// line-start set: a `*name:` button declaration or a regex starts a line.
+const OPEN_END_RE = /[.,=+\-*%&|^?:<>]$/;
+const CLOSED_END_RE = /(?:\+\+|--)$/;
+const CONTINUATION_START_RE = /^(?:\.(?!\.\.)|\?|[,=&|:]|[+-](?![+-]))/;
+const SKIP_TO_CODE_RE = /(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/y;
+const NON_CODE_LINE_RE = /^[ \t]*(?:\n|$|\/\/|\/\*)/;
+
+function endsStatement(text, i, tail) {
+  if (OPEN_END_RE.test(tail) && !CLOSED_END_RE.test(tail)) return false;
+  SKIP_TO_CODE_RE.lastIndex = i;
+  SKIP_TO_CODE_RE.exec(text);
+  const at = SKIP_TO_CODE_RE.lastIndex;
+  return !CONTINUATION_START_RE.test(text.slice(at, at + 3));
+}
+
+// Offsets of the lines that begin a new top-level statement (the first one
+// excepted). Blank and comment-only lines never begin one, so they stay with
+// the statement above them.
+function statementStarts(text) {
+  const starts = [];
+  forEachTopLevelBreak(text, (i, tail) => {
+    if (!NON_CODE_LINE_RE.test(text.slice(i + 1, i + 4)) && endsStatement(text, i, tail)) starts.push(i + 1);
+  });
+  return starts;
+}
+
+// Blank-line paragraphs, split only where a statement actually ends. A blank
+// line inside a call (a spaced-out arrange(...) or stack(...)) or before a
+// line that carries on the chain above it (`let a = s("bd")` ⏎⏎ `.fast(2)`)
+// is layout, not a boundary: splitting there cut one statement into
+// fragments, wrapped each as a voice (`$: (.fast(2))`), and handed Strudel a
+// SyntaxError that took the whole program down.
+function splitParagraphs(code) {
+  const paragraphs = [];
+  let start = 0;
+  forEachTopLevelBreak(code, (i, tail) => {
+    if (i < start || code[i + 1] !== '\n' || !endsStatement(code, i, tail)) return;
+    paragraphs.push(code.slice(start, i));
+    start = i + 1;
+    while (code[start] === '\n') start++;
+  });
+  paragraphs.push(code.slice(start));
+  return paragraphs;
+}
+
+// Split a paragraph into its top-level statements: a new one starts at every
+// statement that opens with a label. Text before the first label (if any) is
+// the first chunk. Lines are never altered, only grouped.
+function splitAtLabels(text) {
+  const starts = [0, ...statementStarts(text).filter((i) => LABEL_AT_START_RE.test(text.slice(i)))];
+  return starts
+    .map((start, k) => text.slice(start, k + 1 < starts.length ? starts[k + 1] - 1 : text.length))
+    .filter((chunk) => chunk.trim());
+}
+
+// A statement that runs for its effect rather than being a pattern: a
+// declaration, a capability declaration, or nothing but comments. Decided by
+// its first line of code — a `let` nested inside a callback further down
+// does not make the statement a declaration.
+function isBareStatement(stmt) {
+  const first = stmt.split('\n').map((l) => l.trim()).find((t) => t && !COMMENT_LINE_RE.test(t));
+  return first == null || LINE_DECL_RE.test(first) || CAPABILITY_DECL_LINE_RE.test(first);
 }
 
 // Append `fx` to a paragraph that IS a single labeled statement (label at
@@ -90,25 +197,25 @@ function wrapLabeledParagraph(text, fx) {
   const m = text.match(/^([a-zA-Z_$][a-zA-Z0-9_$]*\s*:\s*)([\s\S]+)$/);
   if (!m) return text;
   const [, label, body] = m;
-  return `${label}(${body.trim()})${fx}`;
+  return `${label}${group(body.trim())}${fx}`;
 }
 
 function wrapParagraph(text, fx) {
   const trimmed = text.trim();
   if (!trimmed) return '';
   if (isBareDeclaration(trimmed)) return trimmed;
-  if (LABEL_AT_START_RE.test(trimmed)) return wrapLabeledParagraph(trimmed, fx);
-  const labelPos = trimmed.search(LABEL_ANYWHERE_RE);
-  if (labelPos > 0) {
-    const decl = trimmed.slice(0, labelPos).trim();
-    const rest = trimmed.slice(labelPos);
-    const declPart = isBareDeclaration(decl) ? decl : `$: (${decl})${fx}`;
-    return `${declPart}\n${wrapLabeledParagraph(rest, fx)}`;
+  const chunks = splitAtLabels(trimmed);
+  if (chunks.length > 1 || LABEL_AT_START_RE.test(trimmed)) {
+    return chunks.map((chunk) => {
+      const t = chunk.trim();
+      if (LABEL_AT_START_RE.test(t)) return wrapLabeledParagraph(t, fx);
+      return isBareDeclaration(t) ? t : `$: ${group(t)}${fx}`;
+    }).join('\n');
   }
   // A plain pattern with no label at all — the performer's one "real" voice,
   // left unlabeled because on its own it needs no name. Give it an anonymous
   // voice so it is collected into the stack instead of silently discarded.
-  return `$: (${trimmed})${fx}`;
+  return `$: ${group(trimmed)}${fx}`;
 }
 
 // Attach `fx` (a chain suffix such as `.distort(.2).crush(5)` or
@@ -121,15 +228,18 @@ export function wrapAsVoice(rawCode, fx = '') {
   if (!code.trim()) return code;
 
   if (LABEL_ANYWHERE_RE.test(code)) {
-    return code.split(/\n\n+/).map((p) => wrapParagraph(p, fx)).filter(Boolean).join('\n\n');
+    return splitParagraphs(code).map((p) => wrapParagraph(p, fx)).filter(Boolean).join('\n\n');
   }
 
-  // No label anywhere: a bare pattern, or declarations followed by one.
-  if (DECL_RE.test(code)) {
-    const split = splitDeclAndExpr(code);
-    if (split) return `${split.preamble}\n$: (${split.expr})${fx}`;
-    // Declarations only, no trailing expression — nothing to play.
-    return code;
-  }
-  return `$: (${code})${fx}`;
+  // No label anywhere: the last statement is the pattern — the one strudel.cc
+  // would play — and everything above it (declarations, `setcpm(...)`,
+  // `await samples(...)`) runs bare, as written. Wrapping it all in one `$:
+  // (...)` is a SyntaxError the moment there are two statements.
+  const starts = statementStarts(code);
+  const cut = starts.length ? starts[starts.length - 1] : 0;
+  const last = code.slice(cut).trim();
+  // Declarations, capability lines or comments only — nothing to play.
+  if (isBareStatement(last)) return code;
+  const before = code.slice(0, cut).trim();
+  return `${before ? `${before}\n` : ''}$: ${group(last)}${fx}`;
 }

@@ -20,6 +20,10 @@ import {
 // grammar for the scan and the toggle, and a mini buffer is raised back
 // afterwards so the notation never gets mixed.
 import { detectNotation, miniToMondo, mondoToMini } from './notation.js';
+// The personal editor's `*name: code` declarations are found by the same scan
+// that strips them from the program, so a button exists for exactly what
+// never plays.
+import { buttonDeclarations } from './hydra-code.js';
 
 // classNames: iterable/array of class names (e.g. from element.classList).
 export function classifyEditor(classNames) {
@@ -42,8 +46,13 @@ export function applyRegexMutation(code, pattern, replacement) {
 // commented, in which case it uncomments. Returns the new value plus a
 // remapped selection so the caller can restore the caret/selection after
 // replacing textarea.value (which otherwise resets it to the end).
-export function toggleLineComment(value, selectionStart, selectionEnd) {
+// `marker` is the language's line comment — `//` unless the personal editor
+// is switched to a language that spells it `--` or `#`.
+export function toggleLineComment(value, selectionStart, selectionEnd, marker = '//') {
   const text = String(value ?? '');
+  const mark = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const commentedRe = new RegExp(`^\\s*${mark}`);
+  const uncommentRe = new RegExp(`^(\\s*)${mark} ?`);
   const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
   let end = Math.max(start, Math.min(selectionEnd ?? start, text.length));
 
@@ -58,12 +67,12 @@ export function toggleLineComment(value, selectionStart, selectionEnd) {
 
   const oldLines = text.slice(lineStart, lineEnd).split('\n');
   const nonBlank = oldLines.filter(l => l.trim() !== '');
-  const uncomment = nonBlank.length > 0 && nonBlank.every(l => /^\s*\/\//.test(l));
+  const uncomment = nonBlank.length > 0 && nonBlank.every(l => commentedRe.test(l));
 
   const newLines = oldLines.map(line => {
-    if (uncomment) return line.replace(/^(\s*)\/\/ ?/, '$1');
+    if (uncomment) return line.replace(uncommentRe, '$1');
     if (line.trim() === '') return line;
-    return line.replace(/^(\s*)/, '$1// ');
+    return line.replace(/^(\s*)/, `$1${marker} `);
   });
   const newBlock = newLines.join('\n');
   const newText = text.slice(0, lineStart) + newBlock + text.slice(lineEnd);
@@ -104,15 +113,15 @@ export function toggleLineComment(value, selectionStart, selectionEnd) {
 }
 
 // JPatternButton snippet toggling on metaprogram text: first dwell adds the
-// line, next dwell comments it out, next re-activates (mirrors the Strudel
-// voice-button marker convention).
+// line, next dwell comments it out, next re-activates.
 export const JP_BTN_MARKER = ' // jpattern-btn';
 
 // A `*`-prefixed statement declares a button instead of running: `*$ …` for a
 // scheduling voice, `*# …` for an effect. The declaration itself is inert (the
 // parser skips the line); the button is what writes it into the program. This
-// is the metaprogram's half of the personal editor's `*name: code` buttons —
-// same declaration shape, same toggle, same head-cursor dwell target.
+// is the metaprogram's half of the personal editor's `*name: code` buttons
+// (parseStrudelButtons, below) — same declaration shape, same head-cursor
+// dwell target.
 const JP_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
 
 // Every button a metaprogram declares, in source order:
@@ -217,4 +226,80 @@ export function toggleJPatternSnippet(text, snippet) {
   if (cur.includes(commented)) return cur.replace(commented, active);
   if (cur.includes(active)) return cur.replace(active, commented);
   return cur + active;
+}
+
+// Personal editor buttons. `*name: code` declares a voice rather than running
+// it (normalizePeerCode strips the declaration), and shows up as a button
+// below the code. Pressing it writes `name: code` into the buffer, marked so
+// the next press can find it and take it back out.
+//
+// The voice goes in as a paragraph of its own and the marker is a block
+// comment because strudel-voice.js wraps each paragraph as `label: (body)fx`
+// for a remote peer's effects chain: a voice glued onto the paragraph above
+// it, or a trailing `//` marker, would swallow that `)fx` and break the room's
+// program. For the same reason a second press takes the voice out rather than
+// commenting it out — a comment-only paragraph wraps to `$: (// …)`.
+export const STRUDEL_BTN_MARKER = ' /* strudel-btn */';
+
+// Every button a personal buffer declares, in source order:
+//   { voiceCode, label, active }
+// `voiceCode` is the voice the button writes ('lead: n("0 2")'), across as
+// many lines as its declaration spans.
+export function parseStrudelButtons(text) {
+  const buttons = [];
+  const seen = new Set();
+  for (const { name, body } of buttonDeclarations(text)) {
+    if (!body) continue;
+    const voiceCode = `${name}: ${body}`;
+    if (seen.has(voiceCode)) continue; // one button per distinct voice
+    seen.add(voiceCode);
+    buttons.push({
+      voiceCode,
+      label: strudelButtonLabel(name, body),
+      active: isStrudelSnippetActive(text, voiceCode)
+    });
+  }
+  return buttons;
+}
+
+// An anonymous `$` voice has no name to show, so it is labelled by its code.
+function strudelButtonLabel(name, body) {
+  const compact = name === '$' ? body.replace(/\s+/g, ' ') : name;
+  return compact.length > 20 ? `${compact.slice(0, 20)}…` : compact;
+}
+
+function strudelVoiceLines(voiceCode) {
+  return `${voiceCode}${STRUDEL_BTN_MARKER}`.split('\n');
+}
+
+// The line the button's written voice starts on, or -1.
+function findStrudelVoice(lines, voice) {
+  for (let i = 0; i + voice.length <= lines.length; i++) {
+    if (voice.every((line, k) => lines[i + k] === line)) return i;
+  }
+  return -1;
+}
+
+export function isStrudelSnippetActive(text, voiceCode) {
+  return findStrudelVoice(String(text ?? '').split('\n'), strudelVoiceLines(voiceCode)) !== -1;
+}
+
+export function toggleStrudelSnippet(text, voiceCode) {
+  const cur = String(text ?? '');
+  const lines = cur.split('\n');
+  const voice = strudelVoiceLines(voiceCode);
+  const at = findStrudelVoice(lines, voice);
+  if (at !== -1) {
+    lines.splice(at, voice.length);
+    // The blank line that set the voice apart goes with it, unless it is now
+    // the break between two paragraphs.
+    if (at > 0 && !lines[at - 1].trim() && (at >= lines.length || !lines[at].trim())) lines.splice(at - 1, 1);
+    return lines.join('\n');
+  }
+  // A `$:` voice would mix mini into a mondo buffer (a parse error), so there
+  // the press is a no-op, like a `*#` button in a mini metaprogram. A named
+  // voice is neither notation's opener and fits either.
+  if (voiceCode.startsWith('$:') && detectNotation(cur) === 'mondo') return cur;
+  const head = cur.replace(/\s*$/, '');
+  return `${head ? `${head}\n\n` : ''}${voice.join('\n')}\n`;
 }

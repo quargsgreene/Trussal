@@ -130,7 +130,8 @@ export function entryHasValuePattern(entry) {
     entry.background && entry.background.color,
     entry.background && entry.background.from,
     entry.background && entry.background.to,
-    entry.background && entry.background.angle
+    entry.background && entry.background.angle,
+    entry.color // `# lighting3d`'s light color
   ];
   return candidates.some(isValuePattern);
 }

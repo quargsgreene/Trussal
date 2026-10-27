@@ -34,6 +34,14 @@ const routingSubscribers = new Set();
 
 let audioTagObserver = null;
 let aggregatorJitsiId = null;
+// Walkie Talkie Mode (walkie-talkie.js). walkieAway: jitsiIds of participants
+// who are in it while we are not — still in the Jitsi call and still
+// publishing, but gone as far as this meeting is concerned, so their chains
+// are held silent. meetingMuted: we are in it ourselves, so the whole master
+// bus is silent (the walkie call plays through its own <video> elements, not
+// through this context).
+const walkieAway = new Set();
+let meetingMuted = false;
 
 function notifyRoutingChange() {
   routingSubscribers.forEach(fn => {
@@ -48,6 +56,7 @@ export function subscribeAudioRouting(fn) {
 }
 
 function presenceLevelFor(jitsiId) {
+  if (walkieAway.has(jitsiId)) return 0;
   if (!aggregatorJitsiId) return 1;
   return jitsiId === aggregatorJitsiId ? 1 : 0;
 }
@@ -61,12 +70,31 @@ export function setAggregatorPeer(jitsiId) {
   if (next) publishLocalStrudelToRoom().catch((e) => console.warn('[latency] strudel publish failed', e));
   else unpublishLocalStrudelFromRoom().catch((e) => console.warn('[latency] strudel unpublish failed', e));
   document.dispatchEvent(new CustomEvent('trussal-aggregator-mode-change'));
+  refreshPresenceGains();
+}
+
+function refreshPresenceGains() {
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
   for (const chain of chains.values()) {
     if (chain.presence) chain.presence.gain.setTargetAtTime(presenceLevelFor(chain.jitsiId), now, 0.05);
   }
   if (strudelOut) strudelOut.gain.setTargetAtTime(localStrudelLevel(), now, 0.05);
+}
+
+// The jitsiIds currently in Walkie Talkie Mode while this browser is not.
+export function setWalkieAwayPeers(jitsiIds) {
+  walkieAway.clear();
+  for (const id of jitsiIds || []) if (id) walkieAway.add(id);
+  refreshPresenceGains();
+}
+
+// Silence (or restore) everything this browser hears from the meeting.
+export function setMeetingMuted(on) {
+  meetingMuted = !!on;
+  if (realDestination && audioCtx) {
+    realDestination.gain.setTargetAtTime(meetingMuted ? 0 : 1, audioCtx.currentTime, 0.05);
+  }
 }
 
 export function getAggregatorPeer() { return aggregatorJitsiId; }
@@ -81,7 +109,7 @@ function ensureAudioContext() {
   if (!audioCtx) {
     audioCtx = new Ctor({ sampleRate: 48000 });
     const masterBus = audioCtx.createGain();
-    masterBus.gain.value = 1.0;
+    masterBus.gain.value = meetingMuted ? 0 : 1.0;
     masterBus.connect(audioCtx.destination);
     realDestination = masterBus;
   }
@@ -318,6 +346,10 @@ function captureJitsiAudio() {
         ? conf.getParticipantById(jitsiId) : null;
       if (member && typeof member.isHidden === 'function' && member.isHidden()) return;
     } catch (e) { console.warn("[latency] ignored", e); }
+    // A Walkie Talkie Mode participant we never routed (we joined after they
+    // went away, so they have no peer record): its bare <audio> tag would
+    // otherwise play natively, straight past every chain.
+    if (walkieAway.has(jitsiId) && !remoteSources.has(jitsiId)) { tag.muted = true; tag.volume = 0; return; }
     if (!getPeerByJitsiId(jitsiId)) return;
     if (pendingCaptures.has(jitsiId)) return;
     const existing = remoteSources.get(jitsiId);

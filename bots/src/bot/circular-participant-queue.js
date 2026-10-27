@@ -349,6 +349,13 @@ export class CircularParticipantQueue {
    * listed but never seen. (A ghost whose slot was reclaimed by a rejoiner is
    * already un-ghosted by revive() before this runs, so it carries over live.)
    *
+   * `isAway(token)` exempts a ghost from that reset: a participant who left
+   * this MUC but is still in the meeting — moved into a breakout room, which
+   * from here is indistinguishable from a leave — has not gone anywhere the
+   * program should forget. Its ghost keeps replaying through a re-apply, so a
+   * breakout()/assign() pattern moving someone back and forth never punches a
+   * silent turn into the main room, and revive() takes over when they return.
+   *
    * An empty/invalid token list reverts to join-order mode: ghosts are
    * retired, off-ring participants fold back in (tokenOrder), survivors keep
    * their current arrangement.
@@ -356,7 +363,7 @@ export class CircularParticipantQueue {
    * #servedSlotAt is reset either way, so `lapped` is approximate for the
    * next lap (observability only — same caveat as remove()).
    */
-  applyMetaprogramOrder(rawTokens, { programUpdate = false } = {}) {
+  applyMetaprogramOrder(rawTokens, { programUpdate = false, isAway = () => false } = {}) {
     const tokens = this.captureMetaprogramTokens(rawTokens);
     const retired = [];
 
@@ -418,7 +425,7 @@ export class CircularParticipantQueue {
       // is now treated exactly like one listed but never seen. Reset the shared
       // identity once so every further occurrence of a repeated token folds in
       // as the same placeholder (and the token is retired only once).
-      if (programUpdate && identity.departed) {
+      if (programUpdate && identity.departed && !isAway(tok)) {
         retired.push(tok);
         identity = { jitsiId: tok, departed: false };
         identityByToken.set(tok, identity);

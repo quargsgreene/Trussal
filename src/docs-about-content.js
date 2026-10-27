@@ -145,8 +145,12 @@ const JPATTERN_FUNCTIONS = [
       rested), and how often the frame tiles across the surface in each
       direction. Group 3 is the animation: <code>[spinX spinY spinZ]</code>
       in turns PER CYCLE, read off the same cycle grid the audio follows, so
-      the spin is musical. A written group rests an axis to zero; an
-      unwritten one defaults to a lazy <code>[0 0.5 0]</code> turn.</p>`,
+      the spin is musical; with <code># tiling</code> or
+      <code># tessellation</code> every copy spins in place. A written group
+      rests an axis to zero; an unwritten one defaults to a lazy
+      <code>[0 0.5 0]</code> turn. <code># camera3d</code>,
+      <code># controls3d</code> and <code># lighting3d</code> set how the
+      shape is viewed and lit.</p>`,
   },
   {
     id: 'jp-shape-2d',
@@ -211,26 +215,101 @@ const JPATTERN_FUNCTIONS = [
     name: 'tessellation',
     sig: 'tessellation [cols rows spin]',
     body: `
-      <p>Tiles the frame across the output as a mirrored quilt (p5.js): every
-      cell cover-fits the video, alternate rows and columns flipped so the
-      seams interlock edge to edge, the whole lattice turning at the spin
-      rate (turns per cycle) while the background shows through the corners
-      it uncovers. Defaults 4 columns, 3 rows, spin 0.35. Example(s):</p>
-      <pre># tessellation [6 4 0.5]</pre>`,
+      <p>Covers the whole output with the active shape, at least
+      <code>cols</code> across and <code>rows</code> down. A 2D shape tiles
+      the page in the lattice it really tiles in — squares in a grid,
+      triangles alternating up and down, hexagons (<code>polygon [6]</code>)
+      in a honeycomb, diamonds (<code>polygon [4]</code>) in offset rows —
+      while circles, stars and other polygons pack in staggered rows with
+      the background in the gaps. A 3D shape makes a honeycomb: copies
+      close-packed edge to edge across the frame (three.js), laid over
+      whatever the camera sees, so <code># controls3d</code> can fly over
+      it. Every copy carries the frame and spins in place at the SHAPE's own
+      spin; the shape's scale reads as how full each cell is (gaps below 1).
+      With no shape, the frame itself becomes a mirrored quilt (p5.js),
+      alternate cells flipped so the seams interlock, the whole lattice
+      turning at <code>spin</code> turns per cycle. Defaults 4 columns,
+      3 rows, spin 0.35. Example(s):</p>
+      <pre># polygon [6] [0.95]
+# tessellation [8 5]               <span class="da-comment">// a honeycomb of hexagons</span>
+# torus [1 0.35] [0.9]
+# tessellation [8 5]               <span class="da-comment">// a sheet of spinning tori</span>
+# tessellation [6 4 0.5]           <span class="da-comment">// no shape: the quilt</span></pre>`,
   },
   {
     id: 'jp-tiling',
     name: 'tiling',
     sig: 'tiling <none|grid|hex|strip> [count]',
     body: `
-      <p>Instances the active SHAPE across the output instead of drawing one
-      — <code>grid</code>, <code>hex</code> (staggered rows), or a single
+      <p>Instances the active 3D shape across the output instead of drawing
+      one — <code>grid</code>, <code>hex</code> (staggered rows), or a single
       <code>strip</code>; <code>none</code> clears back to one instance.
-      Count defaults to 3 and caps at 12, and the camera pulls back to frame
-      the lattice so nine copies stay legible. Needs a shape directive —
-      without one there is nothing to tile. Example(s):</p>
+      Count defaults to 3 and caps at 12; the lattice is chosen to leave the
+      fewest gaps (9 is 3×3) and the camera pulls back to frame it. Each copy
+      spins in place about its own center while the lattice holds still.
+      <code># tessellation</code> takes precedence. Example(s):</p>
       <pre># tiling hex [7]
 # tiling none</pre>`,
+  },
+  {
+    id: 'jp-camera3d',
+    name: 'camera3d',
+    sig: 'camera3d [azimuth polar zoom fov roll]',
+    body: `
+      <p>Places the three.js camera. Angles are degrees, as in three.js's
+      OrbitControls: <code>azimuth</code> 0–360 around the vertical (0 is
+      straight on), <code>polar</code> down from overhead (90 is level,
+      smaller looks down from above, larger up from below). <code>zoom</code>
+      multiplies the closeness of the auto-fitted (or the shape's own)
+      distance — 2 is twice as close. <code>fov</code> is the lens angle
+      (default 50); the framing refits to it, so it changes perspective, not
+      size. <code>roll</code> tilts the picture. Rest any slot for its
+      default. Applies to every three.js layer — shape, honeycomb, skybox,
+      particle3. Example(s):</p>
+      <pre># camera3d [30 60 1.5]           <span class="da-comment">// right, above, closer</span>
+# camera3d [~ ~ ~ 20]              <span class="da-comment">// a long lens: flattened</span>
+# camera3d [<360 90 180 270>]      <span class="da-comment">// a new side every cycle</span></pre>`,
+  },
+  {
+    id: 'jp-controls3d',
+    name: 'controls3d',
+    sig: 'controls3d <none|orbit|trackball|map|fly> [speed amount]',
+    body: `
+      <p>Moves the camera on its own, in the style of the three.js control
+      of the same name — the Aggregator's view has no mouse, so each control
+      is a motion on the cycle grid, layered over <code># camera3d</code>.
+      <code>speed</code> is laps per cycle (default 0.125: one lap every
+      8 cycles). <code>orbit</code> circles the vertical, bobbing
+      <code>amount</code>° over and under (default 20).
+      <code>trackball</code> tumbles round an axis tilted <code>amount</code>°
+      (default 35), rolling as it goes. <code>map</code> pans in a
+      figure-eight reaching <code>amount</code> of the view (default 0.35).
+      <code>fly</code> dives toward the shape and back, closing
+      <code>amount</code> of the gap to its surface (default 0.6, at most
+      0.95). <code>none</code> holds the camera still. Example(s):</p>
+      <pre># controls3d orbit [0.25 30]
+# controls3d fly [0.5 0.8]
+# controls3d none</pre>`,
+  },
+  {
+    id: 'jp-lighting3d',
+    name: 'lighting3d',
+    sig: 'lighting3d <none|ambient|directional|point|hemisphere|studio> [intensity azimuth polar spin] ["color"]',
+    body: `
+      <p>Lights the 3D shapes. By default (<code>none</code>) they are
+      unlit, so the frame's own colors are the surface; any other mode
+      shades them. <code>ambient</code> is even light; <code>directional</code>
+      a sun; <code>point</code> a lamp near the shape; <code>hemisphere</code>
+      sky-colored from above and dark from below; <code>studio</code> the
+      three-point rig (key, fill, rim). <code>intensity</code> 1 shows the
+      frame at full brightness where the key light hits it square on.
+      <code>azimuth</code>/<code>polar</code> aim the key light, in the same
+      degrees as <code># camera3d</code> (default 45/45: upper right front),
+      and <code>spin</code> circles it at turns per cycle. The quoted color
+      tints the light, and may be a pattern. Example(s):</p>
+      <pre># lighting3d directional
+# lighting3d point [1.5 300 60 0.25] "#ffd0a0"
+# lighting3d studio <"#ffffff" "#ffb070"></pre>`,
   },
   {
     id: 'jp-background',
@@ -250,6 +329,51 @@ const JPATTERN_FUNCTIONS = [
 # background "gradient" <"#f00" "#0f0"> "#000" <45 90>
 # background "image" "https://example.com/backdrop.jpg"</pre>`,
   },
+  {
+    id: 'jp-out',
+    name: 'out',
+    sig: 'out ["device_name"] [channel ...] [media]',
+    body: `
+      <p>Also streams the Aggregator's output to a named device on whichever
+      participant's computer owns it: a monitor for video, text and CSS, or a
+      speaker system for audio, optionally on specific 1-based channels.
+      The name matches the device's label exactly, or else as a substring,
+      ignoring case. <code>"screen 2"</code> picks a second monitor by position.
+      Nothing is sent until the device's owner allows it. Each
+      <code># out</code> line is its own route. Without a medium set, every
+      medium the device can carry is routed. Without any
+      <code># out</code>, output is unchanged. Example(s):</p>
+      <pre># out "lobby screen" ["video" "text"]
+# out "MOTU M4" 3 4 ["audio"]</pre>`,
+  },
+  {
+    id: 'jp-inhabit',
+    name: 'inhabit',
+    sig: 'inhabit [host] [guests]',
+    body: `
+      <p>Lets participants temporarily inhabit another participant. The
+      guests see the host's personal editor in place of their own, and the
+      host and every guest can type into it at the same time. Play runs it as
+      the host's program. Guests can also read the host's private text chats
+      and send private messages as the host, which the host's browser sends.
+      They wear the host's theme, see the host's device names, and can answer
+      output requests for those devices. Guests hold the host's metaprogram
+      permissions, follow the host into its breakout room, and take the host's
+      turn on the ring, so their audio is heard in the host's place while
+      their own turn is silent.</p>
+      <p>The host is one participant, or a pattern of participants and
+      <code>~</code>, which changes hosts each cycle. <code>~</code> means
+      the guests are themselves for that cycle. A <code>/n</code> after the
+      pattern holds each host for n cycles. The guests are one participant
+      or a set in brackets. Humans may inhabit bots and bots may inhabit
+      humans. Many guests may inhabit one host, but each guest inhabits only
+      one host at a time and appears in only one <code># inhabit</code> line.
+      Guests keep their own editor, theme and room, which come back when they
+      leave. The host sees who is inhabiting them and what they can see.
+      Example(s):</p>
+      <pre># inhabit 0 1
+# inhabit <0 ~ 3a>/4 [1 2b]</pre>`,
+  },
 
 ];
 
@@ -260,7 +384,7 @@ const TEXT_CYCLES_FUNCTIONS = [
     sig: '.word([pattern])\n.w([pattern])\n# word [pattern]\n#w [pattern]',
     body: `
       <p>Sends the specified words to the meeting-wide chat window. A few characters need escaping to render literally:</p>
-      <table>
+      <table>personal editor
         <tr><th>Written</th><th>Renders</th></tr>
         <tr><td><code>word("&lt;a ~ b&gt;")</code></td><td><code>a</code>, a rest, <code>b</code></td></tr>
         <tr><td><code>word("&lt;a \\~ b&gt;")</code></td><td><code>a</code>, a literal <code>~</code>, <code>b</code></td></tr>
@@ -313,16 +437,12 @@ const TEXT_CYCLES_FUNCTIONS = [
   {
     id: 'tc-spacing',
     name:'spacing',
-    sig: `.spacing([character_spacing_pattern])\n# spacing [character_spacing_pattern]`,
+    sig: `.spacing([character_spacing_pattern])`,
     body: `<p>Sets the spacing amount between characters for the specified text pattern in pixels./p>
     <span>Example(s):</span>
     <code>$: typeface("Verdana")
     .word("Zecke")
     .spacing("<3 30 300>")
-    </code>
-    <code>$ typeface "Verdana" 
-    # word "Zecke"
-    # spacing <3 30 300>
     </code>
     `
   },
@@ -336,10 +456,6 @@ const TEXT_CYCLES_FUNCTIONS = [
     .word("Pudding mit Gabel")
     .underline()
     </code>
-    <code>$ typeface "Tahoma" 
-    # word "Pudding mit Gabel"
-    # underline
-    </code>
     `
   },
   {
@@ -352,10 +468,109 @@ const TEXT_CYCLES_FUNCTIONS = [
     .word("Row row row your boat gently down the stream")
     .slant()
     </code>
-    <code>$ typeface "Trebuchet MS" 
-    # word "Row row row your boat gently down the stream"
-    # slant
-    </code>
+    `
+  },
+  {
+    id: 'tc-speak',
+    name: 'speak',
+    sig: `.speak([language], [voice])\n # speak`,
+    body: `<p>Speaks each word aloud, using the browser's voice, at the moment it appears in the chat window.
+    You'll hear the text exactly as it shows on screen, including any changes from the room's <code>#</code> effects.
+    The optional language is a tag like <code>'fr-FR'</code>. The optional voice is either a number that picks
+    from that language's voices or part of a voice's name.</p>
+    <p>Everyone in the meeting hears the words, because each participant's browser speaks them as they
+    appear in that participant's chat.</p>
+    <p>Words written in the International Phonetic Alphabet are played as the sounds the symbols stand for,
+    not read out in English: <code>x</code> is a velar fricative, <code>y</code> is a close front rounded
+    vowel, and <code>ɬ</code> is a lateral fricative. Each sound is synthesized from its place and manner of
+    articulation. Length (<code>ː ˑ ̆</code>), stress (<code>ˈ ˌ</code>), tone letters and tone marks
+    (<code>˥ ˧˥ á ǎ</code>), up- and downstep, and global rise and fall are all heard. So are voicelessness,
+    breathy and creaky voice, nasalization, aspiration, labialization, palatalization, velarization,
+    pharyngealization, rhoticity, nasal and lateral release, unreleased stops, ejectives, syllabicity and
+    tie bars. Diacritics that only move the tongue slightly (advanced, retracted, raised, lowered,
+    centralized, more or less rounded, tongue root, dental, apical, laminal, linguolabial) can be typed but
+    don't change the sound.</p>
+    <p>A word counts as IPA if it uses a symbol that ordinary spelling doesn't, or if it is a transcription
+    wrapped in <code>/…/</code> or <code>[…]</code>. Write a transcription in single quotes, because
+    <code>/</code> and <code>[ ]</code> mean something else in double-quoted mini-notation. Other words are
+    spoken by the browser's text-to-speech voice.</p>
+    <p>To sing the words, add a pitch with Strudel's <code>note</code>, <code>freq</code>, <code>scale</code>
+    or <code>run</code>. Every sound in a word is sung at the pitch of its event. To give each sound its own
+    pitch, write the sounds as separate steps, such as <code>word("ʃ a l a")</code>, so each step gets the
+    next note. Tone and stress marks bend the pitch up or down from the note. Sung sounds are synthesized at
+    the note's pitch, so a vowel keeps its quality when it's sung high or low.</p>
+    <p>A word that has a pitch or a <code>quantize</code> always uses the IPA voice, even if it's written in
+    ordinary spelling, because the browser's voice can't be tuned or timed. You can also choose the IPA voice
+    directly with <code>.speak('ipa')</code>.</p>
+    <p>To type IPA symbols, press the <strong>IPA</strong> key on the virtual keyboard. The IPA keyboard is
+    split into pages: vowels, consonants, other symbols, diacritics, stress &amp; tone, and impossible. Press
+    <strong>ABC</strong> to go back.</p>
+    <p>The <strong>Impossible</strong> page has the sounds in the shaded cells of the IPA chart, which the
+    IPA judges impossible for a human to make. Because nobody can make them, the synthesized voice makes
+    them by extending its rules for the sounds people can make: each one uses its row's manner (stop,
+    nasal, trill, tap, lateral) at its column's place, and keeps making sound where a real throat
+    couldn't. For example, a glottal nasal hums through the nose even though the glottis is closed, and
+    a velar trill flaps the back of the tongue like a slow lip trill. These sounds have no IPA letters,
+    so each one is written the way the IPA writes any sound it has no letter for, as the nearest letter
+    plus a diacritic: <code>ʡ̬ ʔ̬</code> (voiced pharyngeal and glottal plosives), <code>ʡ̃ ʔ̃</code>
+    (pharyngeal and glottal nasals), <code>ʀ̟ ʢ̠</code> (velar and glottal trills), <code>ɡ̆ ʔ̆</code>
+    (velar and glottal taps), <code>ɦ̞</code> (glottal approximant), <code>ɸˡ βˡ fˡ vˡ ħˡ ʕˡ hˡ ɦˡ</code>
+    (bilabial, labiodental, pharyngeal and glottal lateral fricatives) and <code>β̞ˡ ʋˡ ʕ̞ˡ ɦ̞ˡ</code> (the
+    same four lateral approximants). Each combination plays as that one sound wherever it's written, so
+    <code>ɡ̆</code> is a velar tap, not a short <code>ɡ</code>, and <code>fˡ</code> is a lateral
+    fricative, not an <code>f</code> with lateral release. Other diacritics still work on them, such as
+    <code>ʔ̥̃</code> for a voiceless glottal nasal.</p>
+    <p>To type in another writing system, press the <strong>🌐</strong> key in the bottom-left corner of
+    the virtual keyboard and choose one: Latin with diacritics (umlauts, ß and other accented letters),
+    Arabic, Hebrew, Canadian Syllabics, Northern Brahmic (Devanagari, Bengali, Gurmukhi, Gujarati, Odia),
+    Southern Brahmic (Tamil, Telugu, Kannada, Malayalam, Sinhala), Thaana, Armenian, Cyrillic, Georgian,
+    Greek, Hangul, Mongolian, Neo-Tifinagh, Thai, Perso-Arabic, Osage, Cherokee, Hanzi, Kana &amp; Kanji,
+    or Emoji. Hangul letters join into syllable blocks as you type them. The keyboard remembers your
+    choice.</p>
+    <p>Words in these scripts are spoken too, by the synthesized voice: each word is converted to IPA and
+    played from the same phonetic sounds as an IPA word, so everyone in the meeting hears the same voice
+    whatever voices their browser has. The conversion is a rough guide to pronunciation, not a
+    dictionary: it adds the vowels that Arabic, Hebrew and Thaana usually leave unwritten, and it only
+    knows readings for the Chinese characters and Kanji on the keyboard. A Chinese character is read in
+    Mandarin, unless the word also contains kana or you pass <code>'ja'</code> as the language. To have
+    your browser's own voice read the word instead, name a voice as well as a language, as in
+    <code>.speak('ar-SA', 0)</code>. Emoji are read by the browser's voice, and are silent when sung.</p>
+    <p>To make your own emoji, open the Emoji keyboard and press <strong>＋</strong> on its
+    <strong>Mine</strong> page, or drop image files onto the keyboard. Each image is shrunk to emoji size
+    and gets a name from its filename, and its key types that name between colons, like
+    <code>:party_cat:</code>. Wherever a word in the chat contains that code, everyone in the meeting sees
+    the picture, including people who join later. When spoken, the browser's voice reads the name and the
+    synthesized voice skips it. Press <strong>🗑</strong> and then an emoji to delete it. You can keep up
+    to 64 of your own emoji.</p>
+    <span>Example(s):</span>
+    <code>$: word("&lt;hello ʃiːp&gt;").speak()</code>
+    <code>$: word('/ˈχaʁt͡s/').speak()</code>
+    <code>$: word('/ma˥ ma˧˥ ma˨˩˦ ma˥˩/').speak()</code>
+    <code>$: word("bonjour").speak('fr-FR', 1)</code>
+    <code>$: word("&lt;مرحبا 안녕하세요 ᏣᎳᎩ&gt;").speak()</code>
+    <code>$: word("&lt;hello:party_cat: :party_cat:&gt;").speak()</code>
+    <code>$: note("c4 e4 g4").word("नमस्ते").speak()</code>
+    <code>$: note("c4 e4 g4 e4").word("ʃa").speak()</code>
+    <code>$: n(run(8)).scale("C:minor").word("la").speak()</code>
+    <code>$: freq("&lt;220 330&gt;").word('/ʁuʒ/').speak()</code>
+    `
+  },
+  {
+    id: 'tc-quantize',
+    name: 'quantize',
+    sig: `.quantize([beats_pattern])\n # quantize [beats_pattern]`,
+    body: `<p>Sets how long each sound of a spoken word lasts, in beats of the Metaprogram's
+    <code># tempo</code>. If there is no tempo, a beat is 120 bpm. Every participant applies the same
+    Metaprogram, so the timing is the same for everyone. Use it with <code>.speak()</code>.</p>
+    <p>Each sound gets one slot of that length. Long and half-long marks (<code>ː ˑ</code>) make the slot
+    2 or 1.5 times as long, and extra-short (<code>̆</code>) makes it half as long. Sounds joined by a tie bar
+    (<code>t͡s</code>) share one slot. A space or a minor group <code>|</code> is a silent slot, and a major
+    group <code>‖</code> is two. A stop or click is placed at the end of its slot, so it is held closed and
+    then released into the next sound.</p>
+    <p>Like any control, it can be a pattern: <code>.quantize("&lt;1 0.5&gt;")</code>.</p>
+    <span>Example(s):</span>
+    <code>$: word('/ˈχaʁt͡s/').speak().quantize(0.5)</code>
+    <code>$: note("&lt;c4 g3&gt;").word("sala").speak().quantize("&lt;1 0.25&gt;")</code>
     `
   },
   {
@@ -367,26 +582,18 @@ const TEXT_CYCLES_FUNCTIONS = [
     <code>$: typeface("Georgia")
     .word("Colorless green ideas sleep furiously")
     .size("<3em 4px 10pc 0.3ch>*2")
-    </code>
-    <code>$ typeface("Georgia")
-    # word("Colorless green ideas sleep furiously")
-    # size <3em 4px 10pc 0.3ch>*2
-    </code>     
+    </code>    
     `,
   },
   {
     id: 'tc-color',
     name: 'color',
-    sig: '.color([color_pattern])\n# color [color_pattern]',
+    sig: '.color([color_pattern])',
     body: `<p>Sets the CSS color value for the selected text. Overloads color in Strudel.</p>
     <code>$: typeface("Trebuchet MS")
     .word("nooooooooo")
     .color("#abcdef")
-    </code>
-    <code>$ typeface("Tremuchet MS")
-    # word("nooooooooo")
-    # color "#abcdef"
-    </code>     
+    </code>   
     `,
   },
   {
@@ -400,10 +607,6 @@ const TEXT_CYCLES_FUNCTIONS = [
       $: typeface("Times New Roman")
       .hyperlink("<google.com reddit.com ca.gov>")
       </code>
-      <code>
-      $ typeface
-      # hyperlink "<google.com reddit.com ca.gov>"
-      </code>
       `,
   },
   {
@@ -416,11 +619,6 @@ const TEXT_CYCLES_FUNCTIONS = [
        $: typeface("Times New Roman")
       .hyperlink("<google.com reddit.com ca.gov>")
       .hover("color:#ffffff font-size:12px")
-      </code>
-      <code>
-      $ typeface("Times New Roman")
-      # hyperlink("<google.com reddit.com ca.gov>")
-      # hover("color:#ffffff font-size:12px")
       </code>
       </p>`,
   },
@@ -480,6 +678,26 @@ const CONFIG_FUNCTIONS = [
       `,
   },
   {
+    id: 'pc-main',
+    name: 'permissionsConfig',
+    sig: "permissionsConfig([config_object])",
+    body: `
+      <p>Sets what other participants may do with you. Write it anywhere in your personal editor;
+      it takes effect when you press Play.</p>
+      <p><code>allowInhabitFrom</code> is who may inhabit you with the metaprogram's
+      <code># inhabit</code>: "all" (the default), "none", or a list of participants.
+      Anyone else named as your guest stays themselves.</p>
+      <p><code>allowClipping</code> is whether others may clip your audio and video with
+      liveCapture() (true by default). Setting it to false stops any clip of you that is already
+      running and clears what it recorded.</p>
+      <p>A permissionsConfig with a mistake in it changes nothing, so your previous permissions
+      still apply. Leaving it out restores the defaults.</p>
+      <span>Example:</span>
+      <code>permissionsConfig({"allowInhabitFrom": ["1", "2b"], "allowClipping": false})
+      </code>
+      `,
+  },
+  {
     id: 'gc-main',
     name: 'gestureAndLandmarkConfig',
     sig: "gestureAndLandmarkConfig([config_object])",
@@ -488,25 +706,6 @@ const CONFIG_FUNCTIONS = [
       <span>Example:</span>
       <code>botConfig({"random":true, "quantity":3, "retroactive":true})
       </code>
-      
-      `,
-  },
-  {
-    id: 'jp-grid',
-    name: 'grid',
-    sig: 'grid [boolean]=false',
-    body: `
-      <p>Marks each participant's video panel with a small grayscale circle in the top-left corner.
-      One's own panel's circle is always white, and the darkness of the circle is determined
-      according to estimated physical distance between participants.
-      With landmarks on, a participant running MediaPipe also gets a
-      vector in the bottom-right showing their average facial-landmark
-      motion.</p>
-      $: participants("<1 0 3z>")
-      .cycles("wcpl", 100)
-      .grid(true)
-      .fast(1.2)
-      </code> 
       `,
   },
   {
@@ -514,6 +713,12 @@ const CONFIG_FUNCTIONS = [
     name: 'mosaic',
     sig: 'mosaic [boolean]=true',
     body: `
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/Trussal_2.png"
+          alt="An example of the mosaic output" />
+          <figcaption>Mosaic mode with a triadic color scheme</figcaption>
+      </figure>
       <p>How the Aggregator's video feed is displayed. When set to true, when it is each participant's turn,
       individual video squares are displayed as a part of a grid that is arranged as a square with 
       a number of video tiles equal to the ceiling of the square root of the amount of participants. 
@@ -541,10 +746,12 @@ const UI_PATTERN_FUNCTIONS = [
       <code>$: reaction("si tu@3 s!4")
       .slow(2)
       </code>
-      <code>
-      $ reaction "si tu@3 s!4" 
-      # slow 2
-      </code>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/collapse_keyboard.png"
+          alt="Collapsing the keyboard by focusing the &#9660 button" />
+          <figcaption>Collapsing the keyboard by focusing the &#9660 button</figcaption>
+      </figure>
       `,
   },
   {
@@ -552,24 +759,48 @@ const UI_PATTERN_FUNCTIONS = [
     name: 'breakout',
     sig: "breakout([breakout_room_assignment_pattern])",
     body: `
-      <p>Creates a pattern of breakout room names and assignments. Does not recreate a preexisting breakout room.</p>
+      <p>Creates a pattern of breakout room names and assignments. Does not recreate a preexisting breakout room.
+      Rooms are created and participants moved by a moderator's browser, so a moderator must be in the main room.
+      Anyone being moved between rooms sees a panic button at the bottom right, which returns them to the main room,
+      notifies everyone, and stops breakout patterns from moving them again.</p>
       <span>Example:</span>
       <code>$: breakout({"name":"room", "participants": ["0", "1", "2b"]})
       </code>
-      <code>$ breakout {"name":"room", "participants": ["0", "1", "2b"]}
+      <p>The name may be a mini-notation pattern of room names, which moves participants back and forth.
+      "main" is the main room. Within a pattern, escape a space in a room name with a backslash (written \\\\ in the literal).</p>
+      <code>$: breakout({"name":"&lt;room main&gt;", "participants": ["2b"]}).slow(4)
       </code>
       `,
   },
   {
     id: 'assign',
     name: 'assign',
-    sig: "assign([participant_name_pattern)",
+    sig: "assign([breakout_room_assignment_pattern])",
     body: `
-      <p>Assigns participants to breakout rooms. Does not reassign participants to a room to which they have already been assigned/</p>
+      <p>Assigns participants to breakout rooms already created with breakout(), or to "main" to send them back to the main room.
+      Does not reassign participants to a room to which they have already been assigned.</p>
       <span>Example:</span>
-      <code>$: assign({"name":"room", "participants": ["0", "1", "2b"]})
+      <code>$: assign({"name":"&lt;room other main&gt;", "participants": ["0", "1", "2b"]})
       </code>
-      <code>$  assign {"name":"room", "participants": ["0", "1", "2b"]}
+      `,
+  },
+  {
+    id: 'meeting-move',
+    name: 'meeting',
+    sig: "meeting([meeting_assignment_pattern])",
+    body: `
+      <p>Moves participants to a different meeting on the same server, the way breakout() moves them to a breakout room.
+      No moderator is needed: each participant named rejoins the other meeting from their own browser, a full page load that takes a few seconds,
+      so a participant who has just arrived waits 8 seconds before the next move. Does not move a participant who is already in the named meeting.
+      When patterns disagree about where someone should be, the most recent request wins, whichever meeting it came from.
+      Anyone moved sees the same panic button as for breakout rooms, which returns them straight into the meeting they first joined
+      and stops meeting patterns from moving them again.</p>
+      <span>Example:</span>
+      <code>$: meeting({"name":"jam2", "participants": ["0", "1", "2b"]})
+      </code>
+      <p>The name may be a mini-notation pattern of meeting names. "main" is the meeting the pattern is running in, so a pattern can send participants away and bring them back.
+      Meeting names cannot contain spaces, /, ?, #, % or backslashes.</p>
+      <code>$: meeting({"name":"&lt;jam2 main&gt;", "participants": ["2b"]}).slow(8)
       </code>
       `,
   },
@@ -583,129 +814,98 @@ const LIVE_CAPTURE_FUNCTIONS = [
       <p>Records and stores the most recently played turn of one medium from one source.</p>
       <span>Example:</span>
       <code>liveCapture('audio', 'Scarlett 2i2 (Focusrite)', true)
-      .chop(8)
-      </code>
-      <code>liveCapture 'audio' 'Scarlett 2i2 (Focusrite)' true
-      # chop(8)
-      </code>     
+      .chop(8)    
       `,
   },
 ];
 
-// const STRUDEL_OVERLOAD = [
-//   {
-//     id: 'jp-ply',
-//     name: 'ply — repeat each turn\'s buffer n times',
-//     sig: 'ply <n>',
-//     body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
-//       buffer into <em>n</em> repeats.</p>
-//       <pre># ply 2</pre>`,
-//   },
-//   {
-//     id: 'jp-chop',
-//     name: 'chop — chop each turn\'s buffer into n pieces',
-//     sig: 'chop <n>',
-//     body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
-//       buffer into <em>n</em> consecutive pieces.</p>
-//       <pre># chop 2</pre>`,
-//   },
-//   {
-//     id: 'jp-shuffle',
-//     name: 'shuffle — randomize buffer-piece order',
-//     sig: 'shuffle [n]',
-//     body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
-//       of (optionally, <em>n</em>) buffer pieces, seeded so every listener
-//       hears the same shuffle.</p>`,
-//   },
-//   {
-//     id: 'jp-degrade',
-//     name: 'degrade / degradeBy — drop events at random',
-//     sig: 'degrade\ndegradeBy <probability 0–1>',
-//     body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
-//       default; <code>degradeBy</code> takes an explicit probability. Seeded,
-//       so the draw is identical for every listener.</p>
-//       <pre># degradeBy 0.25</pre>`,
-//   },
-//   {
-//     id: 'jp-undegrade',
-//     name: 'undegrade / undegradeBy — the inverse of degrade',
-//     sig: 'undegrade\nundegradeBy <probability 0–1>',
-//     body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
-//       would have dropped — the complementary draw, same seed.</p>`,
-//   },
-//   {
-//     id: 'jp-hush',
-//     name: 'hush — silence the voice',
-//     sig: 'hush',
-//     body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
-//       voice's output entirely without removing it from the scheduling
-//       sequence.</p>`,
-//   },
-//   {
-//     id: 'jp-jux',
-//     name: 'jux — a stacked, cycle-offset duplicate',
-//     sig: 'jux',
-//     body: `<p>Duplicates the voice, offsetting the copy by one cycle — the
-//       metaprogram analog of Strudel's <code>.jux()</code>/the stack
-//       (<code>,</code>) operator.</p>`,
-//   },
-//   {
-//     id: 'jp-superimpose',
-//     name: 'superimpose — layer a second sequence on top',
-//     sig: 'superimpose [<sequence>]',
-//     body: `<p>Like <code># jux</code>, but the optional bracketed sequence
-//       lets the superimposed layer be a different pattern, not a plain copy.</p>
-//       <pre># superimpose &lt;0 2&gt;</pre>`,
-//   },
-// ];
+const OUTPUT_ROUTE_FUNCTIONS = [
+  {
+    id: 'out-main',
+    name: 'out',
+    sig: '.out([device_name], [channels])/n # out [device_name] [channels]',
+    body: `
+      <p>Streams a voice's output, as the Aggregator streams it, to a named
+      device on a participant's computer: a monitor for Hydra, word() and css()
+      voices, or a speaker system for Strudel voices. A speaker route can name
+      one channel or a list of channels, starting from 1. Two channels carry
+      left and right. One channel, or three or more, each carry a mono mix.
+      Device names match the way liveCapture matches them: the exact label
+      first, then a substring, ignoring case.</p>
+      <p>The device's owner is always asked first, once for each author and
+      device. Choosing Deny lasts for the rest of the session. A monitor opens
+      in its own window on that screen, so the owner clicks Open to place it.
+      Click inside that window to make it fullscreen. A route plays during its
+      author's turn on the ring, and stops when the author stops playing.
+      Leaving off <code>.out</code>, or using Hydra's own
+      <code>.out()</code> or <code>.out(o1)</code>, leaves output as it is.
+      Example(s):</p>
+      <code>vid: osc(100).out("some monitor")
+drums: s("bd*4").out("MOTU M4", [3, 4])
+$: word("hello").out("lobby screen")</code>
+      <p>The Aggregator mixes all of one performer's voices of the same medium
+      into a single stream. Two of a performer's voices routed to the same
+      device therefore share that stream. A bot has no devices to route to,
+      so <code>.out("…")</code> in a bot's editor is ignored.</p>
+      `,
+  },
+];
 
 const FETCH_PATTERNS = [
   {
     id:'image',
     name:'image',
-    sig: 'image([image_file_name_pattern])\nimage image_file_name_pattern',
+    sig: 'image([image_file_name_pattern])',
     body:`<p>Sends image files up to 10MB in the public meeting chat window.
     .jpeg, .jpg, .png, .gif, .bmp, and .svg files are supported.</p>
     <code>$: image("<example.com/cat.png someplace.xyz/doggo.svg>")</code>
-    <code>$ image <example.com/cat.png someplace.xyz/doggo.svg> </code>
     `
   },
   {
     id:'video',
     name:'video',
-    sig: 'video([video_file_name_pattern])\nvideo video_file_name_pattern',
+    sig: 'video([video_file_name_pattern])',
     body:`<p>Sends video files up to 10MB in the public meeting chat window.
     .mp4, mov, and m4a files are supported.</p>
     <code>$: video("example.com/pupper.mov")</code>
-    <code>$ video "example.com/pupper.mov" </code>
     `
   },
   {
     id:'soundFile',
     name:'soundFile',
-    sig: 'soundFile([sound_file_name_pattern])\nsoundFile sound_file_name_pattern',
+    sig: 'soundFile([sound_file_name_pattern])',
     body:`<p>Sends audio files up to 10MB in the public meeting chat window.
     .wav, mp3, and .ogg files are supported.</p>
     <code>$: soundFile("example.com/ratchet.wav")</code>
-    <code>$ soundFile "example.com/ratchet.wav" </code>
     `
   },
   {
     id:'pdfFile',
     name:'pdfFile',
-    sig: 'pdfFile([pdf_file_name_pattern])\npdfFile pdf_file_name_pattern',
+    sig: 'pdfFile([pdf_file_name_pattern])',
     body: `<p>Sends PDF files up to 10MB in the public meeting chat window</p>
     <code>$: textFile("<example.com/shopping.pdf someplace.xyz/digeridoo.pdf>")</code>
-    <code>$ textFile <example.com/shopping.pdf someplace.xyz/digeridoo.pdf> </code>
     `
   },
   {
     id:'textFile',
     name:'textFile',
-    sig: 'textFile([text_file_name_pattern])\ntextFile text_file_name_pattern',
+    sig: 'textFile([text_file_name_pattern])',
     body: `<p>Sends text files up to 10MB in the public meeting chat window</p>
     <code>$: textFile("<example.com/satie.txt someplace.xyz/transistor.txt>")</code>
-    <code>$ textFile <example.com/satie.txt someplace.xyz/transistor.txt> </code>
+    `
+  },
+  {
+    id:'backing',
+    name:'backing',
+    sig: 'backing([file_name], [loop]=true, [turn_only]=false, [restart]=false)',
+    body: `<p>Streams an uploaded audio or video file up to 10MB as a backing voice while you are playing,
+    unbroken by the turns of the participant rotation. The second argument is whether it loops; the third is whether
+    it streams only during your own turn; the fourth is whether pressing play starts the file over. A turn-only backing
+    pauses when your turn ends and picks up where it left off on your next turn. Stopping pauses a backing too, and
+    playing again resumes it where it left off unless restart is true. .wav, .mp3, .ogg, .mp4, .mov, and .m4a files are supported. A video plays full-frame beneath
+    the mosaic. Requires the room's aggregator.</p>
+    <code>$: backing("example.wav", true, false)</code>
     `
   },
 
@@ -910,6 +1110,12 @@ export function buildDocsBody() {
         However, patterns manipulating the use of these features (Meeting Chat, Polls, Screen Sharing, Reactions) may be simultaneously applied to the meeting room,
         and all updates are sequential with respect to the timestamps of manually-triggered events against the stream scheduling
         performed by the Aggregator.
+        <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/ReactionPattern.png"
+          alt="The Aggregator" />
+        <figcaption></figcaption>
+      </figure>
         </p>
 
         <h4>MediaPipe in the Meeting Room</h4>
@@ -929,6 +1135,7 @@ export function buildDocsBody() {
       Only the Aggregator outputs the coordinated live coded patterns to the entire meeting room and alters room-wide CSS during a meeting. The conductor monitors the health of 
       bot participants, as well as compliance with dynamic, automated memory and network bandwidth constraints, removing bot participants from the meeting room, and shutting off 
       the Aggregator's video feed as it sees fit in order to preserve the navigability of the meeting.
+      Conductor settings changed from inside a meeting apply to that meeting only; every other meeting keeps its own.
       </p>
       <figure>
         <img
@@ -940,7 +1147,7 @@ export function buildDocsBody() {
         <img
           src="https://trussal-docs.quargsgreene.workers.dev/conductor_cropped.png"
           alt="The Conductor interface" />
-        <figcaption>The Conductor interfacen</figcaption>
+        <figcaption>The Conductor interface</figcaption>
       </figure>
     <h3>Trussal Studio</h3>
         <p>In the bottom right corner of the meeting room is a "Studio" button. Clicking or dwelling upon it opens Trussal Studio.
@@ -950,28 +1157,19 @@ export function buildDocsBody() {
         Trussal Studio also displays JPattern syntax errors to the user. The Metaprogram is stored in its own conflict-free replicated data type (CRDT). 
         Each bot editor corresponds to its own CRDT as well. In addition to the aforementioned ways to start hands-free features, one may also open the 
         gesture and landmark detection using the "Face" and "Keys" buttons in the top right corner of Trussal Studio. The "Personal Theme Settings" button
-        in the same toolbar group opens the color, font, and font-scale controls for one's own browser. As is the case in Strudel, the keyboard
+        in the same toolbar group opens the color, font, and font-scale controls for one's own browser. Its "Walkie Talkie Mode" checkbox is the one
+        setting there that others notice: while it is on, one talks only with the other participants who have it on, over plain camera and microphone in a
+        small screen in the bottom left corner. To everyone else, and to the Aggregator, Walkie Talkie Mode participants have left the meeting, though the
+        meeting is never ended because of it, even if every human participant has it on. As is the case in Strudel, the keyboard
         shortcut "Ctrl" + "Enter" reevaluates the code in the currently focused editor, and "Ctrl" + "." pauses the running of the code
         inside of the current editor. In addition to mirroring Strudel's support for uploads and fetching of of audio samples as .wav with a sample rate of 48kHz with a bit-depth of 16 bits,
         Trussal Studio supports JSON, CSV, and TSV file uploads, as well as fetching of JPEG, PNG, GIF, SVG, BMP, MOV, MP4, TXT, and MP3 files.
         </p>
       <figure>
         <img
-          src="https://trussal-docs.quargsgreene.workers.dev/pe_1.png"
-          alt="The personal editor" />
-        <figcaption>The personal editor</figcaption>
-      </figure>
-      <figure>
-        <img
-          src="https://trussal-docs.quargsgreene.workers.dev/pe_2.png"
-          alt="The personal editor in another configuration" />
-        <figcaption>The personal editor in another configuration</figcaption>
-      </figure>
-      <figure>
-        <img
           src="https://trussal-docs.quargsgreene.workers.dev/metaprogram_window.png"
-          alt="The personal editor in another configuration" />
-        <figcaption>The personal editor in another configuration</figcaption>
+          alt="The Metaprogram editor" />
+        <figcaption>The Metaprogram editor</figcaption>
       </figure>
       <figure>
         <img
@@ -981,10 +1179,99 @@ export function buildDocsBody() {
       </figure>
       <figure>
         <img
-          src="https://trussal-docs.quargsgreene.workers.dev/net_dash.png"
-          alt="The personal editor in another configuration" />
-        <figcaption>The personal editor in another configuration</figcaption>
+          src="https://trussal-docs.quargsgreene.workers.dev/pe_2.png"
+          alt="The personal editor in another theming configuration" />
+        <figcaption>The personal editor in another theming configuration</figcaption>
       </figure>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/net_dash.png"
+          alt="The network dashboard" />
+        <figcaption>The network dashboard</figcaption>
+      </figure>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/dark_mode.png"
+          alt="Dark mode" />
+        <figcaption>Dark mode</figcaption>
+      </figure>
+    <h3>Personal Editor Languages</h3>
+        <p>The dropdown at the top of the personal editor switches the language it plays. Each language keeps its own draft, so switching
+        back and forth loses nothing, and switching never stops anything already playing: Stop (or "Ctrl" + ".") stops only the language
+        currently selected. "Ctrl" + "/" comments lines out with the selected language's own comment marker.</p>
+        <table>
+          <tr><th>Language</th><th>Where it runs</th><th>Who hears or sees it</th></tr>
+          <tr><td>JPattern</td><td>Every browser in the room</td><td>The whole room, scheduled by the Metaprogram</td></tr>
+          <tr><td>Strudel (pure)</td><td>Every browser in the room</td><td>The whole room. Written exactly as on strudel.cc — no <code>'personal editor'</code> directive needed; it is added when the code is sent</td></tr>
+          <tr><td>Hydra (pure)</td><td>Every browser in the room</td><td>The whole room. Written exactly as on hydra.ojack.xyz — no <code>await initHydra()</code> needed, and blank lines are allowed</td></tr>
+          <tr><td>Punctual</td><td>This browser only</td><td>Only you, unless you share your screen or route your audio (below)</td></tr>
+          <tr><td>TidalCycles, Sonic Pi, SuperCollider (sclang), Renardo, zwirn, Sardine</td><td>Your own terminal, through the live bridge</td><td>The room, once your computer's audio is routed into your microphone (below)</td></tr>
+          <tr><td>Text mode (no code)</td><td>Nowhere</td><td>Only you — a plain text scratchpad that is never evaluated</td></tr>
+        </table>
+
+        <h4>The Live Bridge</h4>
+        <p>Languages that run in a terminal are reached through a small bridge that runs on your own computer. From a checkout of the Trussal
+        repository (after <code>npm install</code>), start it in a terminal and leave it running:</p>
+        <code>npm run bridge</code> (or <code>node scripts/live-bridge.mjs</code>)
+        <p>It prints a token. Pick a terminal language in the dropdown, paste the token into the "Token" field that appears, and press Play.
+        The bridge only listens on 127.0.0.1 and refuses any connection that does not present the token, because whatever reaches it runs
+        as you. Each interpreter is started on its first Play and kept running; its output appears in the editor's status line and in the
+        bridge's terminal. Some browsers ask for permission the first time a page connects to a local address — allow it. Useful settings, all optional:</p>
+        <table>
+          <tr><td><code>--port 7171</code></td><td>The port to listen on (match it in the "Bridge" field).</td></tr>
+          <tr><td><code>TRUSSAL_BRIDGE_TOKEN</code></td><td>A fixed token instead of a new random one each run.</td></tr>
+          <tr><td><code>TRUSSAL_BRIDGE_ORIGINS</code></td><td>Comma-separated page origins allowed to connect, e.g. <code>https://meet.example.org</code>.</td></tr>
+          <tr><td><code>TIDAL_CMD</code>, <code>TIDAL_BOOT</code>, <code>SCLANG_CMD</code>, <code>RENARDO_CMD</code>, <code>ZWIRN_CMD</code>, <code>SARDINE_CMD</code></td><td>Override the command that starts an interpreter.</td></tr>
+          <tr><td><code>SONIC_PI_HOST</code>, <code>SONIC_PI_PORT</code></td><td>Where Sonic Pi listens for OSC (default 127.0.0.1:4560).</td></tr>
+        </table>
+
+        <h4>Routing Terminal Audio Into the Room</h4>
+        <p>Terminal languages make sound on your computer, not in the browser, so the room hears them only through your microphone input.
+        Send your audio output into a virtual input and choose that input as your microphone in the meeting's audio settings:
+        on Linux a PipeWire/PulseAudio monitor source (e.g. via <code>pavucontrol</code>, or <code>pw-loopback</code>); on macOS BlackHole;
+        on Windows VB-CABLE. SuperCollider-based languages can instead be pointed at that device directly.</p>
+
+        <h4>TidalCycles</h4>
+        <p>Install GHC and Tidal (<code>cabal install --lib tidal</code>), and SuperCollider with SuperDirt; start SuperDirt in SuperCollider with
+        <code>SuperDirt.start</code>. The bridge runs <code>ghci</code> with Tidal's <code>BootTidal.hs</code>, which it finds through GHC; if it cannot,
+        set <code>TIDAL_BOOT=/path/to/BootTidal.hs</code>. The whole buffer is evaluated as one block, so several <code>d1</code>…<code>d16</code> lines can be
+        sent together. Stop sends <code>hush</code>.</p>
+
+        <h4>Sonic Pi</h4>
+        <p>Sonic Pi cannot be driven from a terminal, so the bridge sends your code as an OSC cue to a receiver running inside Sonic Pi. Open Sonic Pi,
+        paste this into an empty buffer of its own, and press Run once:</p>
+        <code># Trussal live bridge receiver
+live_loop :trussal_run do
+  use_real_time
+  code = sync "/osc*/trussal/run"
+  run_code code[0]
+end</code>
+        <p>Each Play then runs your buffer as a new Run, exactly as if you had pressed Run in Sonic Pi. Stop stops every <code>live_loop</code> your last
+        buffer started (Sonic Pi's own Stop button stops everything, the receiver included — press Run on it again afterwards).</p>
+
+        <h4>SuperCollider (sclang)</h4>
+        <p>Install SuperCollider so that <code>sclang</code> is on your PATH. The bridge starts its own <code>sclang</code>, so boot the server from
+        your code (<code>s.waitForBoot { … }</code>). Stop runs <code>CmdPeriod.run</code>, the same as "Ctrl" + "." in the SuperCollider IDE.</p>
+
+        <h4>Renardo</h4>
+        <p>Install Renardo (<code>pip install renardo</code>) and SuperCollider, and complete Renardo's first-run setup (its SuperCollider
+        startup code and sample download) by running <code>renardo</code> once. The bridge runs <code>renardo --pipe</code>; if Renardo should launch
+        SuperCollider itself, set <code>RENARDO_CMD="renardo --sclang --pipe"</code>. Stop runs <code>Clock.clear()</code>.</p>
+
+        <h4>zwirn</h4>
+        <p>The easiest route is a zwirnmill release; the bridge needs the <code>zwirnzi</code> interpreter, built from source with Haskell and Rust
+        (see zwirn's installation guide at codeberg.org/uzu/zwirn), or with <code>cabal install zwirnzi --flags +superdirt</code> to play through
+        SuperDirt instead of its built-in Doux engine. The bridge runs <code>zwirnzi --ci.cli=true</code>. Stop sends <code>hush</code>.</p>
+
+        <h4>Sardine</h4>
+        <p>Install Python 3.10+ and Sardine (<code>pip install sardine-system</code>), configure it once with <code>sardine config</code>, and start
+        SuperCollider with SuperDirt if you play samples. The bridge runs the <code>sardine</code> interpreter and sends your buffer to it, adding the
+        blank lines Python needs after indented blocks. Stop runs <code>silence()</code>.</p>
+
+        <h4>Punctual</h4>
+        <p>Nothing to install: Punctual is loaded into the page from dktr0.github.io the first time it is played, and draws over the meeting the way
+        Hydra does. Stop clears it.</p>
+
     <h3>JPattern Overview & Reference</h3>
         <p>
           Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
@@ -1059,14 +1346,23 @@ export function buildDocsBody() {
           <p>There are three different preprocessing directives, signifying who each program belongs to.
           They are 'metaprogram editor', 'personal editor', and 'bot editor'. Each program must contain 
           a preprocessing directive, even if it only contains Strudel and/or Hydra code.
-        </p>
+        </p>    <code>$ typeface("Tremuchet MS")
+    # word("nooooooooo")
+    # color "#abcdef"
+    </code>  
         <h4>Adding Inline Buttons</h4>
         <p>Adding an * to a voice name creates an inline button upon reevaluation.
         </p>
         <span>Example:</span>
         <code>*btn: sound("piano:2")
-        .note("a4 b4 c4)
+        .note("a4 b4 c4")
         </code>
+        <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/button_creatiom.png"
+          alt="Creating a button in the Metaprogrammer" />
+        <figcaption>Creating a button that appeands "<0>" if desired</figcaption>
+        </figure>
         <h4>Global Room Pattern Functions</h4>
         ${renderFnSection(JPATTERN_FUNCTIONS)} 
         <figure>
@@ -1111,6 +1407,9 @@ export function buildDocsBody() {
 
         <h4>Live Capture Patterns</h4>
         ${renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
+
+        <h4>Output Routing Patterns</h4>
+        ${renderFnSection(OUTPUT_ROUTE_FUNCTIONS)}
 
         <h4>Jitsi UI Patterns</h4>
         ${renderFnSection(UI_PATTERN_FUNCTIONS)}

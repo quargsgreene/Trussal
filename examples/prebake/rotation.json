@@ -1,0 +1,100 @@
+{
+  "metaprogram": "$ participants <0 1>\n# ring\n",
+  "humans": {
+    "0": {
+      "displayName": "Caller",
+      "code": {
+        "strudel": "$: s(\"bd*2 [~ sd]\").bank(\"RolandTR909\")"
+      },
+      "personalTheme": {
+        "primaryColor": "#fdf0d5",
+        "secondaryColor": "#780000"
+      }
+    },
+    "1": {
+      "displayName": "Responder",
+      "code": {
+        "strudel": "$: n(\"0 2 4 7\").scale(\"A3:minor\").s(\"piano\")"
+      },
+      "personalTheme": {
+        "primaryColor": "#fdf0d5",
+        "secondaryColor": "#780000"
+      }
+    }
+  },
+  "meetingChat": {
+    "Caller": {
+      "text": "Call and response: we swap roles every 30 seconds."
+    }
+  },
+  "alternatives": [
+    {
+      "settings": {
+        "humans": {
+          "0": {
+            "code": {
+              "strudel": "$: n(\"0 2 4 7\").scale(\"A3:minor\").s(\"piano\")"
+            },
+            "personalTheme": {
+              "primaryColor": "#003049",
+              "secondaryColor": "#fdf0d5"
+            }
+          },
+          "1": {
+            "code": {
+              "strudel": "$: s(\"bd*2 [~ sd]\").bank(\"RolandTR909\")"
+            },
+            "personalTheme": {
+              "primaryColor": "#003049",
+              "secondaryColor": "#fdf0d5"
+            }
+          }
+        },
+        "meetingChat": {
+          "Caller": {
+            "text": "Swap!"
+          }
+        }
+      },
+      "timeout": 30,
+      "interval": 60
+    },
+    {
+      "settings": {
+        "humans": {
+          "0": {
+            "code": {
+              "strudel": "$: s(\"bd*2 [~ sd]\").bank(\"RolandTR909\")"
+            },
+            "personalTheme": {
+              "primaryColor": "#fdf0d5",
+              "secondaryColor": "#780000"
+            }
+          },
+          "1": {
+            "code": {
+              "strudel": "$: n(\"0 2 4 7\").scale(\"A3:minor\").s(\"piano\")"
+            },
+            "personalTheme": {
+              "primaryColor": "#fdf0d5",
+              "secondaryColor": "#780000"
+            }
+          }
+        },
+        "meetingChat": {
+          "Caller": {
+            "text": "And back."
+          }
+        }
+      },
+      "timeout": 60,
+      "interval": 60
+    },
+    {
+      "settings": {
+        "metaprogram": "$ participants <0 1>\n# ring\n# cycles \"wcl\" 4\n"
+      },
+      "timeout": 300
+    }
+  ]
+}

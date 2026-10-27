@@ -21,12 +21,29 @@ import {
 } from './user-samples.js';
 import { uploadChatFilesToDB } from './file-cycles.js';
 import { injectFacialGestureToggle } from './facial-gesture.js';
+import { injectPrebakeButton } from './meeting-prebake.js';
+import { injectNoCodeButton, closeNoCodeWindow } from './no-code.js';
 import { injectKeyboardToggle, tickKbdUi, _esc as escapeHtml } from './on-screen-keyboard.js';
 export { _esc as escapeHtml } from './on-screen-keyboard.js';
 import { attachPanelControls } from './panel-drag-resize.js';
-import { toggleLineComment } from './editor-router-core.js';
+import { toggleLineComment, parseStrudelButtons, toggleStrudelSnippet } from './editor-router-core.js';
 import { readDirective, ensureDirective, stripDirective } from './program-directive.js';
 import { detectNotation } from './notation.js';
+import { stripOutRoutes } from './output-route-core.js';
+import { isInhabiting, runInHost } from './inhabit.js';
+import { parsePermissionsConfig } from './permissions-config.js';
+import { LANGUAGES, getLanguage, toRoomPattern, lineCommentFor } from './editor-languages-core.js';
+import {
+  getSelectedLanguage,
+  setSelectedLanguage,
+  loadDraft,
+  saveDraft,
+  getBridgeSettings,
+  setBridgeSettings,
+  onBridgeMessage,
+  evalLanguage,
+  stopLanguage,
+} from './editor-languages.js';
 import { attachUndoHistory, resetUndoBaseline } from './editor-undo.js';
 import {
   bootAudioEngine,
@@ -439,6 +456,8 @@ function createThemePickerSection() {
       ${check('darkMode', 'Dark mode')}
       ${check('disableCss', 'Disable CSS changes')}
       ${check('invert', 'Invert')}
+      ${check('disableMediaPipe', 'Disable MediaPipe')}
+      ${check('walkieTalkie', 'Walkie Talkie Mode')}
     </div>
     <div class="ts-theme-fields">
       <label class="ts-theme-field">Primary color:
@@ -480,7 +499,9 @@ function createThemePickerSection() {
       return;
     }
     setTheme(patch);
-    statusEl.textContent = 'Theme applied — this browser only';
+    statusEl.textContent = patch.walkieTalkie
+      ? 'Theme applied — Walkie Talkie Mode is on: the meeting sees you as having left'
+      : 'Theme applied — this browser only';
   });
   return el;
 }
@@ -653,13 +674,16 @@ function createLocalProgramSection(isLocal) {
   const controls = isLocal
     ? `
       <div class="ts-section-controls">
+        <select class="ts-lang-select" title="The language this editor plays">
+          ${LANGUAGES.map(l => `<option value="${l.id}">${escapeHtml(l.label)}</option>`).join('')}
+        </select>
         <button class="ts-btn play" data-action="play">Play</button>
         <button class="ts-btn stop" data-action="stop">Stop</button>
-        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">Samples</button>
+        <button class="ts-btn ghost ts-room-only" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">Samples</button>
         <input type="file" class="ts-samples-input ts-hidden" webkitdirectory>
-        <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs — reference a column as &quot;Name:3&quot;">Data</button>
+        <button class="ts-btn ghost ts-room-only" data-action="load-data" title="Load JSON/CSV/TSV files as data packs — reference a column as &quot;Name:3&quot;">Data</button>
         <input type="file" class="ts-data-input ts-hidden" accept=".json,.csv,.tsv" multiple>
-        <button class="ts-btn ghost" data-action="load-files" title="Load images/video/audio/pdf/txt (10MB each) to reference from image()/video()/textFile()/pdfFile()/soundFile()">Files</button>
+        <button class="ts-btn ghost ts-room-only" data-action="load-files" title="Load images/video/audio/pdf/txt (10MB each) to reference from image()/video()/textFile()/pdfFile()/soundFile()">Files</button>
         <input type="file" class="ts-files-input ts-hidden" accept=".gif,.jpeg,.jpg,.png,.svg,.bmp,.mp4,.m4a,.mov,.txt,.pdf,.wav,.mp3,.ogg" multiple>
         <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop · Ctrl+/ to comment</span>
       </div>`
@@ -674,11 +698,66 @@ function createLocalProgramSection(isLocal) {
       <div class="ts-section-title">Local Program</div>
       ${controls}
     </div>
+    ${isLocal ? `
+    <div class="ts-bridge-row ts-hidden">
+      <label>Bridge <input class="ts-bridge-url" type="text" spellcheck="false"></label>
+      <label>Token <input class="ts-bridge-token" type="password" autocomplete="off" spellcheck="false"></label>
+      <span class="ts-bridge-hint">run <code>node scripts/live-bridge.mjs</code> in your terminal — setup per language in the Docs</span>
+    </div>` : ''}
     <div class="ts-sample-banks-host"></div>
     <textarea class="ts-code" spellcheck="false"></textarea>
+    ${isLocal ? '<div class="ts-voice-btns"></div>' : ''}
     <div class="ts-strudel-sliders ts-sliders"></div>
   `;
   return el;
+}
+
+// The `*name: code` buttons below the local editor (parseStrudelButtons). Only
+// the local tile has them: everything here reads and writes this section's own
+// textarea, never "the personal editor" by selector — a remote tile shares its
+// classes, and a press routed through one corrupted a bot's pattern once.
+//
+// The row is rebuilt only when the declared set changes; a press just flips
+// .on in place. The head cursor's dwell keys on the element, so a rebuilt
+// button under a still-held cursor would read as a new target and fire again.
+function renderVoiceButtons(el) {
+  const area = el.querySelector('.ts-voice-btns');
+  if (!area) return;
+  // `*name: code` is JPattern/Strudel syntax; in any other language a line
+  // that happens to look like one is just that language's code.
+  const lang = getSelectedLanguage();
+  const buttons = (lang === 'jpattern' || lang === 'strudel')
+    ? parseStrudelButtons(el.querySelector('.ts-code').value)
+    : [];
+  const key = JSON.stringify(buttons.map(b => b.voiceCode));
+  if (area.dataset.key !== key) {
+    area.dataset.key = key;
+    area.replaceChildren(...buttons.map(b => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ts-voice-btn';
+      btn.dataset.voiceCode = b.voiceCode;
+      btn.title = b.voiceCode;
+      btn.textContent = b.label;
+      return btn;
+    }));
+  }
+  area.querySelectorAll('.ts-voice-btn').forEach((btn, i) => btn.classList.toggle('on', buttons[i].active));
+}
+
+// Write the voice in (or take it out) and evaluate, as Play would.
+function pressVoiceButton(el, voiceCode) {
+  const codeEl = el.querySelector('.ts-code');
+  const next = toggleStrudelSnippet(codeEl.value, voiceCode);
+  if (next === codeEl.value) {
+    setStatus('A $: button would mix mini into this mondo buffer — give the voice a name (*name: …)');
+    return;
+  }
+  codeEl.value = next;
+  // The same path typing takes: the draft is saved, the press is one undo
+  // step, and the row re-renders.
+  codeEl.dispatchEvent(new Event('input', { bubbles: true }));
+  onEvalAndPlay(next);
 }
 
 // Binds everything that only needs binding once per peer selection — this
@@ -691,12 +770,76 @@ function createLocalProgramSection(isLocal) {
 // Ctrl+/ line-comment toggle for a plain textarea: replacing .value resets
 // the caret to the end, so the pure toggle's remapped selection has to be
 // restored explicitly afterward.
-function applyCommentToggle(codeEl) {
+function applyCommentToggle(codeEl, marker = '//') {
   const { value, selectionStart, selectionEnd } =
-    toggleLineComment(codeEl.value, codeEl.selectionStart, codeEl.selectionEnd);
+    toggleLineComment(codeEl.value, codeEl.selectionStart, codeEl.selectionEnd, marker);
   codeEl.value = value;
   codeEl.setSelectionRange(selectionStart, selectionEnd);
   codeEl.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// Each language keeps its own draft; JPattern's is the one STORAGE_KEY has
+// always held, so the seed and meeting prebakes keep finding it.
+function saveLocalDraft(code, lang = getSelectedLanguage()) {
+  if (lang === 'jpattern') {
+    try { localStorage.setItem(STORAGE_KEY, code); } catch (e) {}
+  } else {
+    saveDraft(lang, code);
+  }
+}
+
+function jpatternDraft() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && saved.trim()) return saved;
+  } catch (e) {}
+  return getLocalPeer().pattern || DEFAULT_PATTERN;
+}
+
+// Show what the selected language can use: uploads feed the room's Strudel,
+// so they belong to the 'room' languages; the bridge fields only to the
+// terminal ones.
+function applyLanguageUi(el) {
+  const lang = getLanguage(getSelectedLanguage());
+  el.querySelector('.ts-lang-select').value = lang.id;
+  el.querySelectorAll('.ts-room-only').forEach(b => b.classList.toggle('ts-hidden', lang.runs !== 'room'));
+  el.querySelector('.ts-bridge-row').classList.toggle('ts-hidden', lang.runs !== 'bridge');
+  el.querySelector('.ts-code').dataset.language = lang.id;
+}
+
+// Switching languages files the current buffer under the language it was
+// written in and opens the new language's own draft. Nothing that is playing
+// stops: each language's Stop stops only that language.
+function switchLanguage(el, next) {
+  const codeEl = el.querySelector('.ts-code');
+  const prev = getSelectedLanguage();
+  if (next === prev) return;
+  clearTimeout(codeDebounce);
+  saveLocalDraft(codeEl.value, prev);
+  setSelectedLanguage(next);
+  codeEl.value = next === 'jpattern' ? jpatternDraft() : loadDraft(next);
+  resetUndoBaseline(codeEl);
+  applyLanguageUi(el);
+  renderVoiceButtons(el);
+  const lang = getLanguage(next);
+  setStatus(lang.runs === 'bridge'
+    ? `${lang.label} — runs in your terminal through the live bridge`
+    : lang.runs === 'page'
+      ? `${lang.label} — runs in this browser only`
+      : lang.runs === 'none' ? 'Text mode — nothing is evaluated' : lang.label);
+}
+
+function bindLanguageControls(el) {
+  const select = el.querySelector('.ts-lang-select');
+  select.addEventListener('change', () => switchLanguage(el, select.value));
+  const urlEl = el.querySelector('.ts-bridge-url');
+  const tokenEl = el.querySelector('.ts-bridge-token');
+  const settings = getBridgeSettings();
+  urlEl.value = settings.url;
+  tokenEl.value = settings.token;
+  urlEl.addEventListener('change', () => setBridgeSettings({ url: urlEl.value }));
+  tokenEl.addEventListener('change', () => setBridgeSettings({ token: tokenEl.value }));
+  applyLanguageUi(el);
 }
 
 function bindLocalProgramSection(el, peer, isLocal) {
@@ -707,14 +850,24 @@ function bindLocalProgramSection(el, peer, isLocal) {
     // Seed once. Local edits are authoritative in the DOM from here on —
     // patchLocalProgramSection never overwrites this value; it only reaches
     // peer-state on eval (sendLocalPattern), exactly as before.
-    codeEl.value = peer.pattern || '';
+    const lang = getSelectedLanguage();
+    codeEl.value = lang === 'jpattern' ? (peer.pattern || '') : loadDraft(lang);
     attachUndoHistory(codeEl);
+    bindLanguageControls(el);
+    renderVoiceButtons(el);
 
     codeEl.addEventListener('input', () => {
       clearTimeout(codeDebounce);
-      codeDebounce = setTimeout(() => {
-        try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) {}
-      }, 200);
+      // While inhabiting someone this textarea shows THEIR editor
+      // (inhabit.js): this participant's own draft stays as it was.
+      if (!isInhabiting()) codeDebounce = setTimeout(() => saveLocalDraft(codeEl.value), 200);
+      renderVoiceButtons(el);
+    });
+    // Delegated, so a rebuilt row needs no rebinding. A head-cursor dwell
+    // lands here too: it clicks the plain <button> like any other control.
+    el.querySelector('.ts-voice-btns').addEventListener('click', (e) => {
+      const btn = e.target.closest('.ts-voice-btn');
+      if (btn) pressVoiceButton(el, btn.dataset.voiceCode);
     });
     codeEl.addEventListener('keydown', (e) => {
       const meta = e.ctrlKey || e.metaKey;
@@ -726,7 +879,7 @@ function bindLocalProgramSection(el, peer, isLocal) {
         onStopClick();
       } else if (meta && e.key === '/') {
         e.preventDefault();
-        applyCommentToggle(codeEl);
+        applyCommentToggle(codeEl, lineCommentFor(getSelectedLanguage()));
       }
     });
 
@@ -811,7 +964,10 @@ function bindLocalProgramSection(el, peer, isLocal) {
     codeEl.value = peer.pattern || '';
     codeEl.dataset.lastSynced = codeEl.value;
     attachUndoHistory(codeEl);
-    const sendRemoteEval = () => sendRemotePattern(targetPeerId, codeEl.value);
+    // A bot has no peripherals of its own and its bare REPL has no `.out("…")`
+    // routing, so a route pasted into a bot's editor is dropped on the way out
+    // rather than failing the bot's whole program (see output-route-core.js).
+    const sendRemoteEval = () => sendRemotePattern(targetPeerId, stripOutRoutes(codeEl.value));
     codeEl.addEventListener('keydown', (e) => {
       const meta = e.ctrlKey || e.metaKey;
       if (meta && e.key === 'Enter') { e.preventDefault(); sendRemoteEval(); }
@@ -869,6 +1025,9 @@ function patchLocalProgramSection(el, peer, isLocal) {
     const banksHost = el.querySelector('.ts-sample-banks-host');
     const area = banksHost.firstElementChild;
     if (area) updateSampleBanksArea(area);
+    // Gesture mutators (writeActiveEditor) set the textarea without an input
+    // event; the tick is what brings the row up to date with them.
+    renderVoiceButtons(el);
     return;
   }
 
@@ -979,7 +1138,27 @@ function updateSampleBanksArea(el) {
     ${sampleList}`;
 }
 
-async function onEvalAndPlay(code) {
+// `own`: run as this performer's program even while inhabiting someone —
+// the code came from this performer's own guests (trussal-inhabit-run).
+async function onEvalAndPlay(code, { own = false } = {}) {
+  if (!own && isInhabiting()) {
+    setStatus(runInHost(code));
+    return;
+  }
+  const lang = getLanguage(getSelectedLanguage());
+  if (lang.runs !== 'room') {
+    try {
+      setStatus(await evalLanguage(lang.id, typeof code === 'string' ? code : ''));
+      document.dispatchEvent(new CustomEvent('trussal-eval'));
+    } catch (e) {
+      console.error(`[studio] ${lang.id} eval failed`, e);
+      setStatus('Error: ' + (e && e.message ? e.message : e));
+    }
+    return;
+  }
+  // Pure Strudel and Hydra reach the room as the JPattern program they
+  // translate to; from here on the path is JPattern's own.
+  if (typeof code === 'string' && lang.id !== 'jpattern') code = toRoomPattern(lang.id, code);
   if (typeof code === 'string') {
     const dir = readDirective(code);
     if (dir.kind !== 'personal') {
@@ -1016,7 +1195,10 @@ async function onEvalAndPlay(code) {
     // "Apply & Start" is pure and no longer releases the gate.
     stopAllBots(false);
     sendLocalPlaying(true);
-    setStatus('Playing');
+    // A broken permissionsConfig(...) does not stop the music, but it changes
+    // nothing either (permissions.js) — say so where the performer is looking.
+    const permissions = typeof code === 'string' ? parsePermissionsConfig(code) : { ok: true };
+    setStatus(permissions.ok ? 'Playing' : `Playing — ${permissions.error} (your previous permissions still apply)`);
     document.dispatchEvent(new CustomEvent('trussal-eval'));
   } catch (e) {
     console.error('[studio] play failed', e);
@@ -1025,6 +1207,15 @@ async function onEvalAndPlay(code) {
 }
 
 async function onStopClick() {
+  const lang = getLanguage(getSelectedLanguage());
+  if (lang.runs !== 'room') {
+    try {
+      setStatus(await stopLanguage(lang.id));
+    } catch (e) {
+      setStatus('Error: ' + (e && e.message ? e.message : e));
+    }
+    return;
+  }
   try {
     sendLocalPlaying(false);
     await stopStrudel();
@@ -1207,6 +1398,8 @@ function ensureToolbar() {
     toolbar.setAttribute('role', 'toolbar');
     toolbar.setAttribute('aria-label', 'Trussal Studio');
     toolbar.innerHTML = `
+      <div class="ts-toolbar-label" aria-hidden="true">Trussal Studio</div>
+      <div class="ts-toolbar-group">
       <div class="ts-toolbar-buttons" id="${TOOLBAR_BUTTONS_ID}">
         ${WINDOW_NAMES.map((name) => {
           const def = WINDOWS[name];
@@ -1217,6 +1410,7 @@ function ensureToolbar() {
         }).join('')}
       </div>
       <div class="ts-toolbar-inputs" id="${TOOLBAR_INPUTS_ID}"></div>
+      </div>
     `;
 
     // Jitsi closes its own popovers on outside mousedown/click. Our buttons
@@ -1243,6 +1437,8 @@ function ensureToolbar() {
   const inputs = toolbar.querySelector(`#${TOOLBAR_INPUTS_ID}`);
   if (inputs && !document.getElementById('trussal-kbd-toggle')) injectKeyboardToggle(inputs);
   if (inputs && !document.getElementById('trussal-fg-toggle')) injectFacialGestureToggle(inputs);
+  if (inputs && !document.getElementById('trussal-prebake-button')) injectPrebakeButton(inputs);
+  if (inputs && !document.getElementById('trussal-no-code-button')) injectNoCodeButton(inputs);
 
   if (!samplesInitialized) {
     samplesInitialized = true;
@@ -1398,6 +1594,7 @@ function tickUi() {
       const win = document.getElementById(WINDOWS[name].id);
       if (win) win.classList.remove('ts-open');
     });
+    closeNoCodeWindow();
     syncWindowButtons();
     tickKbdUi();
     initedRoom = null;
@@ -1449,6 +1646,98 @@ document.addEventListener('trussal-eval', () => {
     codeEl.classList.add('ts-eval-flash');
   }
 });
+
+// A meeting prebake (meeting-prebake.js) loading this performer's program.
+// It lands in the editor and the saved draft, not in the running program: the
+// performer presses Play. While nothing is playing it also becomes the
+// announced pattern, the same as the default seed does, so a personal editor
+// built after this moment opens on it.
+function loadProgramIntoEditor(code) {
+  try {
+    localStorage.setItem(STORAGE_KEY, code);
+  } catch (err) {
+    console.warn('[studio] could not save the prebaked program as the draft', err);
+  }
+  if (!getLocalPeer().playing) sendLocalPattern(code);
+  const codeEl = document.querySelector('.ts-window[data-window="personal"] .ts-detail[data-peer-key="local"] .ts-code');
+  // A prebake's program is JPattern, so the editor goes back to JPattern to
+  // show it (the other language's draft is kept); a prebake that names
+  // another language moves on to it afterwards (loadLanguageIntoEditor).
+  const section = codeEl && codeEl.closest('.ts-local-program-section');
+  if (section && getSelectedLanguage() !== 'jpattern') switchLanguage(section, 'jpattern');
+  else if (!section) setSelectedLanguage('jpattern');
+  if (codeEl) {
+    codeEl.value = code;
+    resetUndoBaseline(codeEl);
+    codeEl.dispatchEvent(new Event('input'));
+  }
+}
+
+// A prebake that names another editor language: after the JPattern program
+// is in place (loadProgramIntoEditor), the editor moves on to that language,
+// opening on the prebake's buffer for it when it gives one, else on the
+// performer's own draft.
+function loadLanguageIntoEditor(language, source) {
+  if (typeof source === 'string') saveDraft(language, source);
+  const codeEl = document.querySelector('.ts-window[data-window="personal"] .ts-detail[data-peer-key="local"] .ts-code');
+  const section = codeEl && codeEl.closest('.ts-local-program-section');
+  if (!section) { setSelectedLanguage(language); return; }
+  if (getSelectedLanguage() !== language) { switchLanguage(section, language); return; }
+  if (typeof source !== 'string') return;
+  codeEl.value = source;
+  resetUndoBaseline(codeEl);
+  codeEl.dispatchEvent(new Event('input'));
+}
+
+// A prebake alternative firing mid-performance (`live`) is heard at once:
+// a performer who is playing goes straight on to the new program.
+document.addEventListener('trussal-prebake-program', (e) => {
+  const { code, language, source, live } = e.detail || {};
+  if (typeof code !== 'string') return;
+  const playing = !!getLocalPeer().playing;
+  loadProgramIntoEditor(code);
+  if (language && language !== 'jpattern') loadLanguageIntoEditor(language, source);
+  if (live && playing) onEvalAndPlay(language && language !== 'jpattern' ? loadDraft(language) : code);
+});
+
+// Someone inhabiting this performer pressed Play in its editor (inhabit.js):
+// it plays as if this performer had.
+document.addEventListener('trussal-inhabit-run', (e) => {
+  const code = e.detail?.code;
+  if (typeof code === 'string') onEvalAndPlay(code, { own: true });
+});
+
+// The No Code whiteboard ran (no-code.js): its program lands in the editor
+// exactly as a prebake's does, and then plays, as if the performer had
+// pressed Play on it.
+document.addEventListener('trussal-no-code-program', (e) => {
+  const code = e.detail?.code;
+  if (typeof code !== 'string') return;
+  loadProgramIntoEditor(code);
+  onEvalAndPlay(code);
+});
+
+// Interpreter output from the live bridge: the last non-empty line is what
+// the performer needs (an error, a prompt coming back); the rest stays in the
+// bridge's own terminal.
+onBridgeMessage((msg) => {
+  if (msg.language && msg.language !== getSelectedLanguage()) return;
+  const line = String(msg.text || '').split('\n').map(l => l.trim()).filter(Boolean).pop();
+  if (!line) return;
+  setStatus(msg.type === 'output' ? `${getLanguage(msg.language).label}: ${line}` : line);
+});
+
+document.addEventListener('trussal-prebake-samples-loaded', async (e) => {
+  const { audio, images } = e.detail || {};
+  if (audio || images) await refreshLocalSamples();
+  await refreshSampleBanks();
+});
+
+document.addEventListener('trussal-prebake-status', (e) => setStatus(String(e.detail ?? '')));
+
+// The room's combined program failed to evaluate — nothing is playing, so say
+// why instead of leaving "Playing" up (see strudel.js's onEvalError).
+document.addEventListener('trussal-strudel-eval-error', (e) => setStatus(`Error: ${e.detail}`));
 
 subscribeParticipants((event, payload) => {
   if (event === 'local' && payload && !selectedJitsiId) { selectedJitsiId = payload.id; selectedPeerKey = 'local'; }

@@ -33,3 +33,13 @@
 .tc-word.tc-spaced {
   letter-spacing: calc(var(--tc-letter-spacing, 0px) + var(--tc-spacing-extra, 0px));
 }
+
+/* An uploaded emoji's :shortcode: (custom-emoji.js's fillWithEmoji): sized to
+   the word's own font, so .size() scales it like any other glyph. */
+.tc-word .tc-custom-emoji {
+  height: 1.3em;
+  width: auto;
+  max-width: 3em;
+  vertical-align: -0.3em;
+  object-fit: contain;
+}

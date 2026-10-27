@@ -4,6 +4,8 @@ import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderH
 import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
 import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId, isAggregatorSlotTaken } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
+import { startBreakoutWatcher } from './breakout.js';
+import { startMeetingMoveWatcher } from './meeting-move.js';
 import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';
 import { installPublishedVideoOverride, startWithVideoMuted } from './published-video.js';
 import { installHydraParamApi } from './hydra-params.js';
@@ -14,6 +16,10 @@ import './studio.js';
 import './conductor-settings.js';
 import './landmark-gesture-mode.js';
 import './docs-about.js';
+import './output-route.js';
+import './walkie-talkie.js';
+import './permissions.js';
+import './inhabit.js';
 import { getLastAnnouncedPattern, setLastAnnouncedPattern } from './stable-state.js';
 
 // The production shell normally loads /custom-config.css from body.html. Keep
@@ -89,3 +95,5 @@ renderHideStartMeetingButton();
 renderPrejoinScreen();
 renderNoAudioToast();
 renderReturnToLobbyOnMeetingEnd();
+startBreakoutWatcher();
+startMeetingMoveWatcher();

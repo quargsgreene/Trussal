@@ -8,6 +8,7 @@
     "build": "node build.mjs",
     "deploy:local": "npm run build && cp dist/custom-config.js dist/custom-config.css dist/documentation.html dist/about.html docker-jitsi-meet/jitsi-web/ && mkdir -p docker-jitsi-meet/jitsi-web/assets && cp -r dist/assets/. docker-jitsi-meet/jitsi-web/assets/",
     "watch": "node build.mjs --watch",
+    "bridge": "node scripts/live-bridge.mjs",
     "dev": "bash scripts/dev.sh",
     "dev:setup": "bash scripts/dev-setup.sh",
     "dev:down": "bash scripts/dev-down.sh",

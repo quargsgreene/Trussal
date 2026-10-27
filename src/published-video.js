@@ -26,6 +26,9 @@ let canvas = null;
 let ctx = null;
 let rafId = null;
 let lastDrawMs = -Infinity;
+// A <video> that takes the tile over from Hydra while it plays (a No Code
+// single-shot video, see no-code.js), or null.
+let overrideSource = null;
 
 // The canvas is parked off-screen by CSS (published-video.css), never by an
 // inline style — see the stylesheet for why off-screen beats display:none.
@@ -65,17 +68,26 @@ function drawFrame(now) {
   lastDrawMs = now;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const hydra = document.getElementById('hydra-canvas');
-  if (!hydra || !hydra.width || !hydra.height) return;
-  const scale = Math.min(canvas.width / hydra.width, canvas.height / hydra.height);
-  const w = hydra.width * scale;
-  const h = hydra.height * scale;
+  const override = overrideSource && overrideSource.videoWidth ? overrideSource : null;
+  const hydra = override || document.getElementById('hydra-canvas');
+  const srcW = override ? override.videoWidth : hydra?.width;
+  const srcH = override ? override.videoHeight : hydra?.height;
+  if (!hydra || !srcW || !srcH) return;
+  const scale = Math.min(canvas.width / srcW, canvas.height / srcH);
+  const w = srcW * scale;
+  const h = srcH * scale;
   try {
     ctx.drawImage(hydra, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
   } catch (e) {
     // A canvas mid-teardown throws; the next frame picks up the new one.
     console.error('[published-video] could not draw the Hydra canvas', e);
   }
+}
+
+// Publish this <video> in place of the Hydra canvas until it is cleared with
+// null. The tile only reaches the room while the participant's camera is on.
+export function setPublishedVideoSource(video) {
+  overrideSource = video || null;
 }
 
 function startCompositing() {

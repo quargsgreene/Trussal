@@ -1,9 +1,9 @@
 // In-meeting Conductor settings.
 //
 // The toggle lives in the Trussal Studio group on Jitsi's bottom toolbar, and
-// opens the settings in their own browser window, not an overlay: the
-// conductor is a deployment-wide control surface, the form is several screens
-// tall, and the meeting stays visible and unobstructed while it is open. If a
+// opens the settings in their own browser window, not an overlay: the form is
+// several screens tall, and the meeting stays visible and unobstructed while it
+// is open. If a
 // browser or an embedding iframe refuses the popup, the same panel opens as an
 // in-app overlay instead of failing.
 //
@@ -12,9 +12,12 @@
 // peer-state sidecar's `fleet-request` / `fleet-status`, not the admin HTTP
 // port. The app is served over HTTPS while that port is plain HTTP on the bots
 // VM, and the browser has no conductor address to begin with; the same bus
-// that already carries spawn/remove works from any deployment. The fleet
-// applies the same REMOTELY_TUNABLE allowlist as the admin API, so this panel
-// cannot repoint the fleet.
+// that already carries spawn/remove works from any deployment.
+//
+// The settings belong to THIS meeting only. The fleet stores them on the room
+// the request arrived from (ROOM_TUNABLE keys only), layered over the admin
+// defaults, so this panel shapes this meeting's bots and never another's — and
+// it cannot repoint the fleet.
 //
 // Visibility is derived from the Studio toolbar rather than a fixed corner
 // button: the two controls therefore cannot disagree about whether a room is
@@ -263,8 +266,8 @@ function buildPanel(doc, { popup }) {
     <form class="tc-form" novalidate>
       <div class="tc-scroll">
         <div class="ts-section">
-          <div class="ts-section-head"><div class="ts-section-title">Fleet</div></div>
-          <label cloverflow: hidden; ass="tc-range-row">
+          <div class="ts-section-head"><div class="ts-section-title">This meeting</div></div>
+          <label class="tc-range-row">
             <span class="tc-label">Number of bots</span>
             <input class="tc-range" id="trussal-conductor-maxbots" type="range" name="maxBots" min="1" max="100" step="1" value="100">
             <output class="tc-output" for="trussal-conductor-maxbots">100</output>

@@ -13,8 +13,11 @@ import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { setPeerPacks, removePeerPacks } from './data-ref.js';
 import { hasTextCycles } from './text-cycles-core.js';
+import { sanitizeEmojiList } from './custom-emoji-core.js';
 import { textLog, clip } from './text-debug.js';
 import { detectNotation, mondoToMini } from './notation.js';
+import { sanitizeInhabitMap, turnTokenFor } from './inhabit-core.js';
+import { sanitizePermissionsConfig } from './permissions-config.js';
 
 // Import all state and helpers from stable-state (with ss_ prefix to avoid conflicts)
 import {
@@ -47,6 +50,22 @@ const LOCAL_AGGREGATOR_CLAIM_TOKEN = (typeof window !== 'undefined' && typeof wi
   ? window.__trussalAggregatorClaimToken : null;
 const LOCAL_OWNER_INDEX = (typeof window !== 'undefined' && typeof window.__trussalBotOwnerIndex === 'string')
   ? window.__trussalBotOwnerIndex : null;
+
+// Walkie Talkie Mode (walkie-talkie.js): whether this browser is in it, and
+// the room's latest walkie roster from the sidecar. Module state rather than
+// stable-state because walkie-talkie.js re-sends both on its own boot.
+let localWalkie = false;
+let walkieRoster = [];
+
+// The `# inhabit` guest → host map the sidecar last relayed (see
+// inhabit-core.js). Module state, like the walkie roster: the sidecar re-sends
+// it on every (re)connect's hello.
+let inhabitMap = {};
+
+// This participant's own permissionsConfig (permissions.js), carried on every
+// hello so the sidecar never applies the defaults to a reconnecting browser
+// that has narrowed them. null until permissions.js has read one.
+let localPermissionsConfig = null;
 
 // --- Internal Helpers -------------------------------------------------------
 
@@ -98,13 +117,21 @@ function sendHelloIfReady() {
     isAggregator: LOCAL_IS_AGGREGATOR
   };
   if (LOCAL_IS_AGGREGATOR && LOCAL_AGGREGATOR_CLAIM_TOKEN) hello.claimToken = LOCAL_AGGREGATOR_CLAIM_TOKEN;
+  if (localPermissionsConfig) hello.permissionsConfig = localPermissionsConfig;
   if (LOCAL_IS_BOT && LOCAL_OWNER_INDEX) hello.ownerIndex = LOCAL_OWNER_INDEX;
   if (!LOCAL_IS_BOT) {
     const stableId = stableClientId();
     if (stableId) hello.stableId = stableId;
+    // Carried on the hello so a reconnect never briefly reappears to the room.
+    if (localWalkie) hello.walkie = true;
   }
   ws.send(JSON.stringify(hello));
   ss_setHelloSent(true);
+  // A reconnect lands on a fresh sidecar record: put our uploaded emoji back
+  // on it, so the room (and anyone who joins later) can still draw them.
+  if (ss_getLocalPeer().customEmoji?.length) {
+    ws.send(JSON.stringify({ type: 'custom-emoji', emoji: ss_getLocalPeer().customEmoji }));
+  }
   flushPending();
 }
 
@@ -214,6 +241,13 @@ function applyPatch(peer, patch) {
   if (typeof patch.pipelineMs === 'number' || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
   if (typeof patch.canEditMetaprogram === 'boolean') peer.canEditMetaprogram = patch.canEditMetaprogram;
   if (typeof patch.canWriteModulation === 'boolean') peer.canWriteModulation = patch.canWriteModulation;
+  // Uploaded emoji (custom-emoji.js), re-validated here: they arrive from
+  // another browser and end up as <img> sources in this one.
+  if (Array.isArray(patch.customEmoji)) peer.customEmoji = sanitizeEmojiList(patch.customEmoji);
+  // What this peer's own permissionsConfig(...) lets others do with it.
+  if (patch.permissionsConfig && typeof patch.permissionsConfig === 'object') {
+    peer.permissionsConfig = sanitizePermissionsConfig(patch.permissionsConfig);
+  }
   if (Array.isArray(patch.dataPacks)) {
     peer.dataPacks = patch.dataPacks;
     setPeerPacks(peer.peerId, patch.dataPacks);
@@ -253,6 +287,10 @@ function handleMessage(msg) {
         ss_getLocalPeer().roomIndex = msg.you.roomIndex;
         emit('peer-upsert', ss_getLocalPeer());
       }
+      // A roster answers every (re)connect's hello — the point at which
+      // anything this browser keeps on the room (backing files) must be
+      // re-sent, in case the sidecar restarted without it.
+      emit('roster', null);
       break;
 
     case 'peer-join': {
@@ -280,6 +318,15 @@ function handleMessage(msg) {
       emit('peer-upsert', peer);
       break;
     }
+
+    case 'walkie-roster':
+      walkieRoster = Array.isArray(msg.peers) ? msg.peers : [];
+      emit('walkie-roster', walkieRoster);
+      break;
+
+    case 'walkie-signal':
+      if (typeof msg.from === 'string') emit('walkie-signal', { from: msg.from, data: msg.data });
+      break;
 
     case 'scss-compiled':
       ss_getLocalPeer().compiledCss = typeof msg.css === 'string' ? msg.css : '';
@@ -310,7 +357,35 @@ function handleMessage(msg) {
         name: msg.name,
         mime: msg.mime,
         data: msg.data,
+        post: !!msg.post,
       });
+      break;
+
+    case 'prebake':
+      // A meeting prebake (see meeting-prebake.js): sent once when someone
+      // uploads one, and again by the sidecar to every later joiner.
+      if (msg.prebake && typeof msg.id === 'string') {
+        emit('prebake', {
+          id: msg.id,
+          prebake: msg.prebake,
+          fromIndex: msg.fromIndex ?? null,
+          elapsed: Number.isFinite(msg.elapsed) ? msg.elapsed : 0,
+        });
+      }
+      break;
+
+    case 'no-code-library':
+      // The room's No Code snippet library (see no-code.js): sent whole on
+      // every upload, and by the sidecar to every later joiner.
+      if (Array.isArray(msg.snippets)) emit('no-code-library', { snippets: msg.snippets, fromIndex: msg.fromIndex ?? null });
+      break;
+
+    case 'no-code-board':
+      if (msg.board && typeof msg.board === 'object') emit('no-code-board', { board: msg.board, fromIndex: msg.fromIndex ?? null });
+      break;
+
+    case 'no-code-run':
+      if (Number.isInteger(msg.rev)) emit('no-code-run', { rev: msg.rev, fromIndex: msg.fromIndex ?? null });
       break;
 
     case 'poll-vote':
@@ -320,6 +395,57 @@ function handleMessage(msg) {
         previousOption: msg.previousOption ?? null,
         voterToken: msg.voterToken,
       });
+      break;
+
+    case 'breakout-request':
+      // A breakout()/assign() voice fired in its author's browser (see
+      // breakout.js); only the elected moderator browser acts on it.
+      if ((msg.fn === 'breakout' || msg.fn === 'assign') && msg.spec && typeof msg.spec === 'object') {
+        emit('breakout-request', { fn: msg.fn, spec: msg.spec, fromIndex: msg.fromIndex ?? null });
+      }
+      break;
+
+    case 'meeting-move':
+      // A meeting() voice fired in some browser (see meeting-move.js) — this
+      // one included, or the home meeting of someone it moved here — stamped
+      // by the sidecar. Every browser checks whether it is named.
+      if (msg.spec && typeof msg.spec === 'object' && typeof msg.origin === 'string' && Number.isFinite(msg.at)) {
+        emit('meeting-move', { spec: msg.spec, origin: msg.origin, at: msg.at, fromIndex: msg.fromIndex ?? null });
+      }
+      break;
+
+    case 'panic':
+      // Someone pressed the breakout-room panic button (panic-button.js).
+      emit('panic', {
+        fromIndex: msg.fromIndex ?? null,
+        token: typeof msg.token === 'string' ? msg.token : null,
+        displayName: typeof msg.displayName === 'string' ? msg.displayName : null,
+        room: typeof msg.room === 'string' ? msg.room : null,
+      });
+      break;
+
+    case 'inhabit':
+      inhabitMap = sanitizeInhabitMap(msg.map);
+      emit('inhabit', { map: { ...inhabitMap } });
+      break;
+
+    case 'inhabit-relay':
+      // Between a guest and its host only — the sidecar checked the pair.
+      if (typeof msg.from === 'string' && typeof msg.kind === 'string') {
+        emit('inhabit-relay', { from: msg.from, fromIndex: msg.fromIndex ?? null, kind: msg.kind, data: msg.data ?? null });
+      }
+      break;
+
+    case 'editor-crdt-update':
+      if (typeof msg.host === 'string' && typeof msg.update === 'string') {
+        emit('editor-crdt-update', { host: msg.host, update: msg.update, authorIndex: msg.authorIndex ?? null });
+      }
+      break;
+
+    case 'editor-crdt-state':
+      if (typeof msg.host === 'string' && Array.isArray(msg.updates)) {
+        emit('editor-crdt-state', { host: msg.host, updates: msg.updates.filter((u) => typeof u === 'string') });
+      }
       break;
 
     case 'crdt-update':
@@ -488,12 +614,19 @@ export function getActiveJPatternKind() { return ss_getActiveJPatternKind(); }
 // Fails OPEN (true) when there is no live turn signal yet (no aggregator has
 // reported, or the peer has no roomIndex) — an unknown state must not hide a
 // performer's own output before their token is even assigned.
+//
+// A participant inhabiting another (`# inhabit`) has taken the host's place
+// in the rotation: its turn is the host's turn, and its own token's turn
+// passes it by.
 export function isPeerJPatternTurn(jitsiId) {
   if (ss_getActiveJPatternToken() == null) return true;
   const peer = getPeerByJitsiId(jitsiId);
   if (!peer || peer.roomIndex == null) return true;
-  return String(peer.roomIndex) === String(ss_getActiveJPatternToken());
+  return turnTokenFor(String(peer.roomIndex), inhabitMap) === String(ss_getActiveJPatternToken());
 }
+
+// The `# inhabit` guest → host map in force (a copy).
+export function getInhabitMap() { return { ...inhabitMap }; }
 
 export function getAllPeers() {
   const all = [];
@@ -536,6 +669,27 @@ export function sendLocalNetStats(sample = {}) {
   emit('peer-upsert', ss_getLocalPeer());
 }
 
+// Enter or leave Walkie Talkie Mode on the sidecar. The relay does the
+// "left the meeting" part: everyone outside the walkie group gets a
+// peer-leave now and a peer-join when this is turned off again.
+export function setLocalWalkie(on) {
+  const next = !!on && !LOCAL_IS_BOT;
+  if (next === localWalkie) return;
+  localWalkie = next;
+  safeSend({ type: 'walkie', on: next });
+}
+
+export function isLocalWalkie() { return localWalkie; }
+export function getMyPeerId() { return ss_getMyPeerId(); }
+export function getWalkieRoster() { return walkieRoster.slice(); }
+
+// One WebRTC signalling message (offer/answer/candidate) to another walkie
+// peer, relayed point to point by the sidecar.
+export function sendWalkieSignal(toPeerId, data) {
+  if (!toPeerId) return;
+  safeSend({ type: 'walkie-signal', to: toPeerId, data });
+}
+
 export function sendLocalPattern(code) {
   const next = typeof code === 'string' ? code : '';
   if (next !== ss_getLocalPeer().pattern && (hasTextCycles(next) || hasTextCycles(ss_getLocalPeer().pattern))) {
@@ -565,6 +719,15 @@ export function sendLocalDataPacks(packs) {
   ss_getLocalPeer().dataPacks = list;
   if (ss_getMyPeerId()) setPeerPacks(ss_getMyPeerId(), list);
   safeSend({ type: 'datapacks', packs: list });
+  emit('peer-upsert', ss_getLocalPeer());
+}
+
+// This browser's uploaded emoji → its sidecar record, mirrored to the room
+// and held there for late joiners (see custom-emoji.js).
+export function sendLocalCustomEmoji(list) {
+  const emoji = sanitizeEmojiList(list);
+  ss_getLocalPeer().customEmoji = emoji;
+  if (ss_getHelloSent()) safeSend({ type: 'custom-emoji', emoji });
   emit('peer-upsert', ss_getLocalPeer());
 }
 
@@ -637,12 +800,96 @@ export function sendSampleFile({ bank, name, data }) {
   safeSend({ type: 'sample-file', bank, name, data });
 }
 
-export function sendChatFile({ kind, name, mime, data }) {
+export function sendChatFile({ kind, name, mime, data, post = false }) {
   if (typeof kind !== 'string' || typeof name !== 'string' || typeof mime !== 'string' || typeof data !== 'string') return;
-  safeSend({ type: 'chat-file', kind, name, mime, data });
+  const msg = { type: 'chat-file', kind, name, mime, data };
+  // `post` asks every receiver to render the bubble now, rather than only
+  // caching the bytes for their own copy of the author's pattern to trigger.
+  if (post) msg.post = true;
+  safeSend(msg);
+}
+
+// One backing() file on its way to the aggregator, which plays it (see
+// backing-core.js). The sidecar forwards it to the fleet only and keeps it on
+// the room, so an aggregator that (re)joins later still gets it.
+export function sendBackingFile({ kind, name, mime, data }) {
+  if (typeof kind !== 'string' || typeof name !== 'string' || typeof mime !== 'string' || typeof data !== 'string') return;
+  safeSend({ type: 'backing-file', kind, name, mime, data });
+}
+
+export function sendPrebake(prebake) {
+  if (!prebake || typeof prebake !== 'object') return;
+  safeSend({ type: 'prebake', prebake });
+}
+
+export function sendNoCodeLibrary(snippets) {
+  if (!Array.isArray(snippets)) return;
+  safeSend({ type: 'no-code-library', snippets });
+}
+
+export function sendNoCodeBoard(board) {
+  if (!board || typeof board !== 'object' || !Array.isArray(board.lines)) return;
+  safeSend({ type: 'no-code-board', board });
+}
+
+export function sendNoCodeRun(rev) {
+  if (!Number.isInteger(rev)) return;
+  safeSend({ type: 'no-code-run', rev });
 }
 
 export function sendPollVote({ pollId, option, previousOption, voterToken }) {
   if (typeof pollId !== 'string' || typeof voterToken !== 'string') return;
   safeSend({ type: 'poll-vote', pollId, option: option ?? null, previousOption: previousOption ?? null, voterToken });
+}
+
+// This participant's permissionsConfig (permissions.js): kept for the next
+// hello, and sent now if the sidecar already knows this browser.
+export function sendPermissionsConfig(config) {
+  localPermissionsConfig = sanitizePermissionsConfig(config);
+  ss_getLocalPeer().permissionsConfig = localPermissionsConfig;
+  if (ss_getHelloSent()) safeSend({ type: 'permissions-config', config: localPermissionsConfig });
+}
+
+// `# inhabit` (inhabit.js). The static map this browser resolved from the
+// applied program — the sidecar only takes it while no aggregator reports one.
+export function sendInhabitMap(map) {
+  safeSend({ type: 'inhabit', map: sanitizeInhabitMap(map) });
+}
+
+// One message to the other side of an inhabitation: `toPeerId` is the host
+// (kinds 'chat' | 'route' | 'join') or one of its guests ('snapshot').
+export function sendInhabitRelay(toPeerId, kind, data = null) {
+  if (!toPeerId || typeof kind !== 'string') return;
+  safeSend({ type: 'inhabit-relay', to: toPeerId, kind, data });
+}
+
+// One Yjs update to `host`'s personal-editor doc, and the request for the
+// doc's history so far.
+export function sendEditorCrdtUpdate(host, update, { snapshot = false } = {}) {
+  if (typeof host !== 'string' || typeof update !== 'string' || !update) return;
+  safeSend({ type: 'editor-crdt-update', host, update, snapshot });
+}
+
+export function requestEditorCrdtState(host) {
+  if (typeof host !== 'string') return;
+  safeSend({ type: 'editor-crdt-sync', host });
+}
+
+export function sendBreakoutRequest({ fn, spec }) {
+  if ((fn !== 'breakout' && fn !== 'assign') || !spec || typeof spec !== 'object') return;
+  safeSend({ type: 'breakout-request', fn, spec });
+}
+
+export function sendMeetingMove({ spec }) {
+  if (!spec || typeof spec !== 'object') return;
+  safeSend({ type: 'meeting-move', spec });
+}
+
+// `home` ({ meeting, token }) is where a meeting() pattern moved this
+// participant from, and their token there — the sidecar tells that meeting too.
+export function sendPanic({ token, displayName, room, home }) {
+  safeSend({
+    type: 'panic', token: token ?? null, displayName: displayName ?? null, room: room ?? null,
+    homeMeeting: home?.meeting ?? null, homeToken: home?.token ?? null,
+  });
 }

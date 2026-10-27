@@ -1,0 +1,75 @@
+{
+  "humans": {
+    "0": {
+      "displayName": "Facilitator",
+      "personalTheme": {
+        "darkMode": true,
+        "fontFamily": "Arial",
+        "fontSize": 1.5
+      },
+      "code": {
+        "text": "$: word(\"<listen ~ breathe ~ play>\").slow(4)",
+        "language": "textmode",
+        "source": "Session notes\n\n1. Five minutes of listening\n2. Pairs: one plays, one describes\n3. Open jam\n"
+      }
+    },
+    "1": {
+      "displayName": "Guest 1",
+      "personalTheme": {
+        "invert": true,
+        "fontSize": 2,
+        "fontFamily": "Tahoma"
+      },
+      "gestureAndLandmarkConfig": {
+        "virtualKeyboardEnabled": true,
+        "headCursorEnabled": true,
+        "gestureDetectionEnabled": true,
+        "cursorSpeed": 0.1
+      },
+      "enableMediaPipe": true,
+      "code": {
+        "strudel": "$: s(\"<bd hh>\")"
+      }
+    },
+    "2": {
+      "displayName": "Guest 2",
+      "personalTheme": {
+        "primaryColor": "#fffbe6",
+        "secondaryColor": "#003049",
+        "disableCssChanges": true
+      },
+      "code": {
+        "strudel": "$: note(\"<e4 g4 a4>\").s(\"gm_flute\")"
+      }
+    }
+  },
+  "meetingChat": {
+    "Facilitator": {
+      "text": [
+        "Hi all - the agenda and dataset are below.",
+        "We'll start with five minutes of listening."
+      ],
+      "files": {
+        "text": [
+          {
+            "name": "agenda.txt",
+            "src": "data:text/plain;base64,V2VsY29tZSB0byB0aGUgc2Vzc2lvbi4KUGxlYXNlIGtlZXAgeW91ciBtaWMgbXV0ZWQgYmV0d2VlbiBwaWVjZXMuCg=="
+          }
+        ],
+        "csv": [
+          {
+            "name": "weather.csv",
+            "src": "data:text/csv;base64,aG91cix0ZW1wLHdpbmQKMCwxMiwzCjEsMTEsNAoyLDEwLDYKMyw5LDUK"
+          }
+        ],
+        "images": [
+          {
+            "name": "welcome.svg",
+            "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMjgiIGZpbGw9IiNlODQiLz48L3N2Zz4="
+          }
+        ]
+      }
+    }
+  },
+  "applySettingsToExistingParticipants": true
+}

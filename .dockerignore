@@ -16,8 +16,13 @@
 !src/file-cycles-core.js
 !src/polls-core.js
 !src/breakout-core.js
+!src/inhabit-core.js
+!src/permissions-config.js
 !src/strudel-voice.js
 !src/stable-state.js
+!src/backing-core.js
+!src/output-route-core.js
+!src/multimedia-core.js
 !latency-instrument
 !public/lib
 bots/node_modules

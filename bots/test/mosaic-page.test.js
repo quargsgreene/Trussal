@@ -188,6 +188,23 @@ test('output stage: a three.js shape asks for its library and stays off until it
     'the handshake repeats until the install answers it');
 });
 
+test('output stage: works from serialized source, as evaluateOnNewDocument runs it', () => {
+  // Calling pageMosaic directly lets it see this module's scope; the page only
+  // ever gets its source text. Rebuild it from that text in global scope so a
+  // helper left beside it, rather than inside it, fails here too.
+  const serialized = new Function(`return (${pageMosaic.toString()})`)();
+  serialized({ width: 1280, height: 720 });
+  const m = window.__trussalMosaic;
+  const res = pageSetMosaicOutput({
+    shape: { name: 'sphere', family: 'three', geometry: [], scene: [], animation: [] },
+    tiling: null, skybox: true, particle2: null, particle3: null,
+    tessellation: null, background: null,
+  });
+  assert.deepEqual(m.diag().errors, [], 'the stage was built without a ReferenceError');
+  assert.deepEqual(res.wants, ['three'], 'and it asked for its library');
+  assert.equal(m.diag().output.state.shape.name, 'sphere');
+});
+
 test('output stage: a p5 shape asks for p5, and layers can need both libraries', () => {
   pageMosaic({ width: 1280, height: 720 });
   const m = window.__trussalMosaic;
@@ -212,6 +229,42 @@ test('output stage: a p5 shape asks for p5, and layers can need both libraries',
     shape: { name: 'star', family: 'p5', geometry: [100, 5, 0.4], scene: [], animation: [] },
   });
   assert.deepEqual(res.wants, ['three', 'p5']);
+});
+
+test('output stage: tessellation follows the shape — a 3D honeycomb needs three.js only', () => {
+  pageMosaic({ width: 1280, height: 720 });
+  const m = window.__trussalMosaic;
+  const base = {
+    tiling: null, skybox: false, particle2: null, particle3: null, background: null,
+    tessellation: { cols: 6, rows: 4, spin: 0.35 },
+  };
+  const res = pageSetMosaicOutput({
+    ...base, shape: { name: 'sphere', family: 'three', geometry: [], scene: [], animation: [] },
+  });
+  assert.deepEqual(res.wants, ['three'], 'the honeycomb never loads p5');
+  assert.deepEqual(m.diag().output.libs, { three: 'waiting', p5: 'off' });
+
+  pageSetMosaicOutput({
+    ...base, shape: { name: 'star', family: 'p5', geometry: [], scene: [], animation: [] },
+  });
+  assert.deepEqual(m.outputVendorNeeds(), ['p5'], 'a 2D shape tiles the page in p5');
+});
+
+test('output stage: camera, controls and lighting alone draw nothing', () => {
+  pageMosaic({ width: 1280, height: 720 });
+  const m = window.__trussalMosaic;
+  const res = pageSetMosaicOutput({
+    shape: null, tiling: null, skybox: false, particle2: null, particle3: null,
+    tessellation: null, background: null,
+    camera3d: { azimuth: 30, polar: 60, zoom: 1, fov: 50, roll: 0 },
+    controls3d: { mode: 'orbit', speed: 0.125, amount: 20 },
+    lighting3d: { mode: 'studio', intensity: 1, azimuth: 45, polar: 45, spin: 0, color: '#ffffff' },
+  });
+  assert.deepEqual(res.wants, []);
+  const out = m.diag().output;
+  assert.equal(out.active, false);
+  assert.equal(out.state.controls3d, 'orbit');
+  assert.equal(out.state.lighting3d, 'studio');
 });
 
 test('output stage: a background alone never asks for a library or arms the stage', () => {

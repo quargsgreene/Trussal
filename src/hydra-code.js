@@ -17,12 +17,13 @@
 // begins at the first paragraph that doesn't render anything.
 
 import { stripBotConfig } from './bot-config.js';
+import { stripPermissionsConfig } from './permissions-config.js';
 import { stripDirective } from './program-directive.js';
 // The personal/bot editor consumes Strudel ("mini") notation; a buffer written
 // in the terse "mondo" form ($ head "arg" / # method "arg") is lowered to it
 // here, line for line, before the transpiler or any capability sniffing. See
 // src/notation.js.
-import { detectNotation, mondoToMini } from './notation.js';
+import { detectNotation, mondoToMini, stripInlineComments, balanced } from './notation.js';
 // The word()/css() call shapes — imported rather than re-typed so the
 // auto-preamble rule below cannot drift from the rewriters that act on them.
 // Neither core imports this module, so there is no cycle.
@@ -30,6 +31,10 @@ import { WORD_CALL_RE } from './text-cycles-core.js';
 import { CSS_CALL_RE } from './css-cycles-core.js';
 import { FILE_CALL_RE } from './file-cycles-core.js';
 import { POLL_CALL_RE } from './polls-core.js';
+import { extractOutRoutes } from './output-route-core.js';
+// multiArrange()/multiStack() — the mosaic has to know a performer draws Hydra
+// from their Strudel half (see sequencesHydra).
+import { MULTI_CALL_RE } from './multimedia-core.js';
 
 const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
 const INIT_TEXT_CYCLES_RE = /(^|\n)\s*await\s+initTextCycles\s*\(/;
@@ -155,10 +160,49 @@ export const INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HY
 // is answered by either the init line OR the shape.
 export const HYDRA_SHAPE_PATTERN = { source: HYDRA_SHAPE_RE.source, flags: HYDRA_SHAPE_RE.flags };
 
+// A `*name: code` declaration — a personal-editor button (see
+// editor-router-core.js parseStrudelButtons), never a voice. It runs on through
+// the lines that continue its expression: a `.method(` chain line (the docs'
+// own example puts `.note(…)` on the next line) or the rest of a call left
+// open, by the same rule miniToMondo gathers a `$:` voice. Stripping only the
+// `*` line would leave that chain behind — a syntax error on its own, or glued
+// onto whichever voice sits above it.
+const BUTTON_DECL_RE = /^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.*)$/;
+
+// Every declaration in `code`, in source order: { name, body, start, end }.
+// `body` is the expression after `name:` across all of its lines, comments
+// stripped; `start`/`end` are the lines it occupies (end exclusive).
+export function buttonDeclarations(code) {
+  const lines = String(code ?? '').split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = BUTTON_DECL_RE.exec(lines[i]);
+    if (!m) continue;
+    const body = [stripInlineComments(m[2]).trimEnd()];
+    let j = i + 1;
+    while (j < lines.length) {
+      const nxt = lines[j];
+      if (BUTTON_DECL_RE.test(nxt) || /^\s*\$:/.test(nxt) || /^\s*\$[ \t]/.test(nxt) || /^\s*#[ \t]/.test(nxt)) break;
+      if (!/^\s*\.[A-Za-z_$]/.test(nxt) && balanced(body.join('\n'))) break;
+      body.push(stripInlineComments(nxt).trimEnd());
+      j++;
+    }
+    out.push({ name: m[1], body: body.join('\n').trim(), start: i, end: j });
+    i = j - 1;
+  }
+  return out;
+}
+
+function stripButtonDeclarations(code) {
+  const lines = String(code ?? '').split('\n');
+  for (const d of buttonDeclarations(code).reverse()) lines.splice(d.start, d.end - d.start, '');
+  return lines.join('\n');
+}
+
 // Editor text minus the noise that is never part of either language: the
 // leading `'personal editor'` / `'bot editor'` directive line, trailing
-// whitespace/semicolons, `*name: code` lines (studio button widgets, not
-// patterns), and `botConfig(...)` declarations (bot-cluster settings, not
+// whitespace/semicolons, `*name: code` declarations (studio button widgets,
+// not patterns), and `botConfig(...)` declarations (bot-cluster settings, not
 // patterns) — then a mondo buffer lowered to the Strudel form. buildPeerBlock
 // strips exactly these before testing for a preamble, so the mosaic has to
 // strip them too or a leading widget line would hide an otherwise-valid
@@ -177,13 +221,29 @@ export const HYDRA_SHAPE_PATTERN = { source: HYDRA_SHAPE_RE.source, flags: HYDRA
 // one already written `$: …` are left untouched; a buffer that mixes the two
 // notations is left as-is for the transpiler to reject (the local editor names
 // the mistake — see studio.js).
-export function normalizePeerCode(code) {
-  const cleaned = stripBotConfig(stripDirective(code || ''))
+//
+// `.out("device")` routes come off before the preamble sniff, too: a Strudel
+// voice's `.out("speakers")` would otherwise read as Hydra's `.out(` render
+// shape and earn an `await initHydra()` it never asked for. What a route
+// leaves behind (see output-route-core.js) is exactly the code that ran
+// before routes existed, so the browser, the mosaic and a bot all evaluate
+// the same thing they always did; peerOutRoutes below is how the routes
+// themselves are read.
+function lowerPeerCode(code) {
+  const cleaned = stripButtonDeclarations(stripPermissionsConfig(stripBotConfig(stripDirective(code || ''))))
     .replace(/[\s;]+$/g, '')
-    .replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '')
     .trim();
-  const lowered = detectNotation(cleaned) === 'mondo' ? mondoToMini(cleaned) : cleaned;
-  return ensureCapabilityPreambles(lowered);
+  return detectNotation(cleaned) === 'mondo' ? mondoToMini(cleaned) : cleaned;
+}
+
+export function normalizePeerCode(code) {
+  return ensureCapabilityPreambles(extractOutRoutes(lowerPeerCode(code)).code);
+}
+
+// The `.out("device")` routes a performer's buffer declares — see
+// output-route-core.js's extractOutRoutes for the shape of each.
+export function peerOutRoutes(code) {
+  return extractOutRoutes(lowerPeerCode(code)).routes;
 }
 
 // Split normalized code into its Hydra preamble and Strudel remainder, or null
@@ -307,7 +367,18 @@ export function usesLocalImage(code) {
   return /(^|[^\w$])img\s*\(/.test(split.preamble);
 }
 
+// Does the Strudel half hand Hydra chains to multiArrange()/multiStack()?
+// Those are drawn by Strudel triggers on the performer's own page, and the
+// aggregator never runs the Strudel half (MosaicCells sends it the preamble
+// alone), so re-executing would draw nothing at all. The performer's published
+// track mirrors their Hydra canvas — blit it, as for the camera.
+export function sequencesHydra(code) {
+  const split = splitHydraCode(code);
+  if (!split) return false;
+  return MULTI_CALL_RE.test(split.strudel) && HYDRA_SHAPE_RE.test(split.strudel);
+}
+
 export function mosaicCellSource(code) {
   if (!hasHydraCode(code)) return null;
-  return (usesExternalSource(code) || usesLocalImage(code)) ? 'blit' : 'reexecute';
+  return (usesExternalSource(code) || usesLocalImage(code) || sequencesHydra(code)) ? 'blit' : 'reexecute';
 }

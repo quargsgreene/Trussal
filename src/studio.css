@@ -209,9 +209,28 @@
 }
 .ts-window .ts-status { font-size: calc(16.5px * var(--trussal-font-scale, 1)); font-family: monospace; color: var(--trussal-secondary, #111111); }
 
+/* The personal editor's language dropdown, styled as a ghost .ts-btn. */
+.ts-window .ts-lang-select {
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--trussal-secondary, #111111); cursor: pointer;
+  font-weight: 600; font-size: calc(18px * var(--trussal-font-scale, 1)); font-family: inherit;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+}
+.ts-window .ts-bridge-row {
+  display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 6px;
+  font-size: calc(15px * var(--trussal-font-scale, 1)); font-family: monospace; color: var(--trussal-secondary, #111111);
+}
+.ts-window .ts-bridge-row input {
+  font-family: inherit; font-size: inherit; padding: 2px 6px; width: 14em; max-width: 100%;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+}
+.ts-window .ts-bridge-hint { font-style: italic; }
+
 .ts-window .ts-voice-btns {
   display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
 }
+/* Only with buttons in it, so an empty row leaves no gap under the editor. */
+.ts-window .ts-voice-btns:not(:empty) { margin-top: 8px; }
 .ts-window .ts-voice-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 999px;
@@ -306,9 +325,47 @@
 #new-toolbox .toolbox-content-items {
   flex-wrap: wrap;
   height: auto;
+  /* The captioned Studio group makes the row taller than one icon; without
+     this, unwrapped items (tile view, invite) stretch and their hover fill
+     grows a strip below the icon. */
+  align-items: center;
 }
+/* Hang-up leads the row instead of ending it. `order` moves it visually
+   without touching the React-owned DOM; builds name the icon either
+   .hangup-button or .hangup-menu-button. */
+#new-toolbox .toolbox-content-items > :has(.hangup-button, .hangup-menu-button) {
+  order: -1;
+}
+/* The Studio buttons stay in the native row, at the same spot, but are
+   framed as one bordered group with a "Trussal Studio" caption above it. */
 #trussal-studio-toolbar {
-  display: contents;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  align-self: center;
+  margin: 0 8px 0 0;
+}
+#trussal-studio-toolbar .ts-toolbar-label {
+  margin: 0 0 2px;
+  color: var(--trussal-secondary, #111111);
+  font-size: calc(11px * var(--trussal-font-scale, 1));
+  font-weight: 600; line-height: 1;
+  white-space: nowrap;
+}
+#trussal-studio-toolbar .ts-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 3px;
+  border: 1px solid var(--trussal-secondary, #111111);
+  border-radius: 4px;
+}
+/* Spacing between buttons comes from the group's gap; the group's own 3px
+   padding keeps a hovered button's fill clear of the border on every side. */
+#trussal-studio-toolbar .ts-toolbar-group button {
+  height: 40px;
+  margin: 0;
 }
 
 #trussal-studio-toolbar.ts-hidden { display: none !important; }
@@ -391,6 +448,8 @@
     font-size: calc(11px * var(--trussal-font-scale, 1));
   }
   #trussal-studio-toolbar button svg { width: 16px; height: 16px; }
+  #trussal-studio-toolbar .ts-toolbar-group { gap: 4px; }
+  #trussal-studio-toolbar .ts-toolbar-group button { height: 36px; }
 }
 
 @media (max-width: 480px) {

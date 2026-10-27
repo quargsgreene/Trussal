@@ -49,6 +49,6 @@ test('about: keeps the figure and the closing ✕ back to the lobby', (t) => {
   const dir = writePages(t);
   const html = readFileSync(join(dir, 'about.html'), 'utf8');
 
-  assert.match(html, /src="\/css\/src\/docs-images\/about-trussal-in-action\.png"/);
+  assert.match(html, /src="https:\/\/trussal-docs\.quargsgreene\.workers\.dev\/about-trussal-in-action\.png"/);
   assert.match(html, /class="da-close" href="\/"/);
 });

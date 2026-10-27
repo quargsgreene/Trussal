@@ -11,6 +11,7 @@ import {
 import { MEDIA, isMedium, normalizeMediaSet } from './EffectMedia.js';
 import { readDirective, stripDirective } from '../program-directive.js';
 import { detectNotation, miniToMondo } from '../notation.js';
+import { INHABIT_REST, isInhabitToken } from '../inhabit-core.js';
 
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 
@@ -131,6 +132,19 @@ export const SHAPE_SLOTS = {
 // How the frame is repeated when a shape is instanced across the output.
 export const TILING_MODES = ['none', 'grid', 'hex', 'strip'];
 
+// The three.js view: where the camera sits, how it moves on its own, and how
+// the shapes are lit. The aggregator's page is headless — nobody drags it — so
+// every "control" is a motion driven off the cycle grid, named after the
+// three.js controls whose movement it reproduces. Angles are degrees and,
+// since the language has no negative numbers, follow OrbitControls: azimuth
+// 0–360 around the vertical axis (0 = straight on), polar 0–180 down from
+// overhead (90 = level, 0 = looking straight down).
+export const CAMERA3D_SLOTS = ['azimuth', 'polar', 'zoom', 'fov', 'roll'];
+export const CONTROLS3D_MODES = ['none', 'orbit', 'trackball', 'map', 'fly'];
+export const CONTROLS3D_SLOTS = ['speed', 'amount'];
+export const LIGHTING3D_MODES = ['none', 'ambient', 'directional', 'point', 'hemisphere', 'studio'];
+export const LIGHTING3D_SLOTS = ['intensity', 'azimuth', 'polar', 'spin'];
+
 // Shared signature for every directive read as bracket groups of numeric
 // parameters: patternable (`<…>` elements resample per cycle), media-gated
 // (so `# tetrahedron … ["audio"]` leaves the image alone), never metric-keyed.
@@ -144,13 +158,34 @@ for (const name of Object.keys(P5_SHAPES)) EFFECTS[name] = { ...GROUP_SIG, shape
 EFFECTS.particle2 = { ...GROUP_SIG, maxGroups: 1 };
 EFFECTS.particle3 = { ...GROUP_SIG, maxGroups: 1 };
 EFFECTS.tessellation = { ...GROUP_SIG, maxGroups: 1 };
-EFFECTS.tiling = { ...GROUP_SIG, maxGroups: 1, tiling: true };
+// Mode-word directives: a required mode, then at most one parameter group.
+EFFECTS.tiling = {
+  ...GROUP_SIG, maxGroups: 1, modes: TILING_MODES,
+  modeHint: "write '# tiling grid' to instance the shape, '# tiling none' to clear it"
+};
+EFFECTS.camera3d = { ...GROUP_SIG, maxGroups: 1, slots: CAMERA3D_SLOTS };
+EFFECTS.controls3d = {
+  ...GROUP_SIG, maxGroups: 1, modes: CONTROLS3D_MODES, slots: CONTROLS3D_SLOTS,
+  modeHint: "write '# controls3d orbit' to circle the scene, '# controls3d none' to hold the camera still"
+};
+// lighting3d alone also takes one quoted color (or a color pattern) for the light.
+EFFECTS.lighting3d = {
+  ...GROUP_SIG, maxGroups: 1, modes: LIGHTING3D_MODES, slots: LIGHTING3D_SLOTS, color: true,
+  modeHint: "write '# lighting3d directional' to light the shapes, '# lighting3d none' to show the frame unlit"
+};
 // The video as an environment around the camera (three.js), off by default.
 EFFECTS.skybox = { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true };
 // What surrounds the shape: a color, a two-color gradient, or an image URL.
 EFFECTS.background = {
   kind: 'effect', grammar: 'background', patternArgs: true, metricKeywords: [], mediaArg: true
 };
+// Where the Aggregator's output also goes: a named peripheral on whichever
+// participant's machine owns it, once that participant allows it — a monitor
+// for video/text/css, a speaker system (optionally some of its 1-based
+// channels) for audio. `# out "lobby screen" ["video"]`, `# out "MOTU M4" 3 4
+// ["audio"]`. Several may be chained; each is its own route. See
+// src/output-route-core.js.
+EFFECTS.out = { kind: 'effect', grammar: 'out', mediaArg: true };
 
 const PATTERN_FNS = {
   ply: { minArgs: 1, maxArgs: 1 },
@@ -351,7 +386,10 @@ class Parser {
 
   parseProgram() {
     const program = {
-      participants: null, cycles: null, tempo: null, ring: null, chain: []
+      participants: null, cycles: null, tempo: null, ring: null, chain: [],
+      // `# inhabit` lines — kept out of `chain`, which is the effects stack
+      // every effects manager walks; see inhabit-core.js.
+      inhabit: []
     };
     this.skipNewlines();
     while (!this.atEof()) {
@@ -743,13 +781,15 @@ class Parser {
     if (name === 'cycles') { this.parseCycles(program, nameTok); return; }
     if (name === 'tempo') { this.parseTempo(program, nameTok); return; }
     if (name === 'ring') { this.parseRing(program, nameTok); return; }
+    if (name === 'inhabit') { this.parseInhabit(program, nameTok); return; }
     if (PATTERN_FNS[name]) { this.parseChainFn(program, name, nameTok, PATTERN_FNS[name]); return; }
     if (EFFECTS[name]) {
       const sig = EFFECTS[name];
       if (sig.grammar === 'noise') this.parseNoise(program, nameTok, sig);
       else if (sig.grammar === 'background') this.parseBackground(program, name, nameTok, sig);
+      else if (sig.grammar === 'out') this.parseOut(program, name, nameTok, sig);
       else if (sig.metricPairs) this.parseMetricPairFn(program, name, nameTok, sig);
-      else if (sig.tiling) this.parseTilingFn(program, name, nameTok, sig);
+      else if (sig.modes) this.parseModeFn(program, name, nameTok, sig);
       else if (sig.shape || sig.maxGroups != null) this.parseGroupFn(program, name, nameTok, sig);
       else this.parseChainFn(program, name, nameTok, sig);
       return;
@@ -902,6 +942,147 @@ class Parser {
       return;
     }
     program.ring = ring;
+  }
+
+  // `# inhabit <host> <guests>` — see inhabit-core.js. The host is a token
+  // or a `<…>` alternation of tokens and `~` (optionally `/n`), the guests a
+  // token or a `[…]` set. Quoted tokens are accepted too: the mini spelling
+  // `.inhabit("0", "1")` lowers to `# inhabit "0" "1"`.
+  parseInhabit(program, nameTok) {
+    const hostPart = this.parseInhabitHosts();
+    if (!hostPart) { this.recover(); return; }
+    const guests = this.parseInhabitGuests();
+    if (!guests) { this.recover(); return; }
+    if (!this.atStatementEnd()) {
+      this.error(`inhabit got an unexpected argument '${tokenText(this.peek())}' — the syntax is '# inhabit <host> <guest | [guests]>'`, this.peek());
+      this.recover();
+      return;
+    }
+    const self = guests.find((g) => hostPart.hosts.includes(g));
+    if (self) {
+      this.error(`participant ${self} cannot inhabit themselves — leave them out of the host or write '~' for that cycle`, nameTok);
+      return;
+    }
+    for (const g of guests) {
+      if (program.inhabit.some((e) => e.guests.includes(g))) {
+        this.error(`participant ${g} is already a guest in an earlier # inhabit line — a guest inhabits one host at a time`, nameTok);
+        return;
+      }
+    }
+    program.inhabit.push({ hosts: hostPart.hosts, slow: hostPart.slow, guests, line: nameTok.line, col: nameTok.col });
+  }
+
+  // One participant token (bare, bot-suffixed or quoted), or INHABIT_REST for
+  // a rest when `allowRest`; null (with the error recorded) otherwise.
+  readInhabitToken({ allowRest, what }) {
+    const t = this.peek();
+    if (t.type === 'rest') {
+      if (!allowRest) { this.error(`${what} must be a participant token, not a rest`, t); return null; }
+      this.next();
+      return INHABIT_REST;
+    }
+    if (t.type === 'intlike' || t.type === 'index' || t.type === 'string') {
+      const value = String(t.value).trim();
+      if (allowRest && value === INHABIT_REST) { this.next(); return INHABIT_REST; }
+      if (!isInhabitToken(value)) {
+        this.error(`'${tokenText(t)}' is not a participant token (0, 1, 2b, …)`, t);
+        return null;
+      }
+      this.next();
+      return value;
+    }
+    const got = t.type === 'newline' || t.type === 'eof' ? 'end of line' : tokenText(t);
+    this.error(`expected ${what} (a participant token such as 0 or 2b), got '${got}'`, t);
+    return null;
+  }
+
+  parseInhabitHosts() {
+    const open = this.peek();
+    if (open.type === 'punct' && open.value === '[') {
+      this.error("a guest inhabits one host at a time — write '<0 1>' to change hosts from cycle to cycle", open);
+      return null;
+    }
+    if (!(open.type === 'punct' && open.value === '<')) {
+      const host = this.readInhabitToken({ allowRest: true, what: 'a host' });
+      return host == null ? null : { hosts: [host], slow: 1 };
+    }
+    this.next();
+    const hosts = [];
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'newline') { this.next(); continue; }
+      if (t.type === 'eof' || t.type === 'sigil') {
+        this.error("unclosed inhabit host pattern — expected '>'", t);
+        return null;
+      }
+      if (t.type === 'punct' && t.value === '>') break;
+      if (t.type === 'punct') {
+        this.error(`one host per step — '${t.value}' cannot appear inside an inhabit host pattern`, t);
+        return null;
+      }
+      const host = this.readInhabitToken({ allowRest: true, what: 'a host' });
+      if (host == null) return null;
+      hosts.push(host);
+    }
+    const close = this.next();
+    if (!hosts.length) {
+      this.error('empty inhabit host pattern', close);
+      return null;
+    }
+    let slow = 1;
+    const op = this.peek();
+    if (op.type === 'op' && op.line === close.line && op.col === close.col + 1) {
+      if (op.value !== '/') {
+        this.error(`only '/n' slows an inhabit host pattern — got '${op.value}'`, op);
+        return null;
+      }
+      this.next();
+      const n = this.peek();
+      const val = n.type === 'number' ? n.value : (n.type === 'intlike' ? parseFloat(n.value) : NaN);
+      if (!(val > 0) || !isFinite(val)) {
+        this.error("'/' needs a positive number of cycles", n);
+        return null;
+      }
+      this.next();
+      slow = val;
+    }
+    return { hosts, slow };
+  }
+
+  parseInhabitGuests() {
+    const open = this.peek();
+    if (open.type === 'punct' && open.value === '<') {
+      this.error("the guests are a set, not a pattern — write '[1 2b]'; pattern the host to change who is inhabited", open);
+      return null;
+    }
+    if (!(open.type === 'punct' && open.value === '[')) {
+      const guest = this.readInhabitToken({ allowRest: false, what: 'a guest' });
+      return guest == null ? null : [guest];
+    }
+    this.next();
+    const guests = [];
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'newline') { this.next(); continue; }
+      if (t.type === 'eof' || t.type === 'sigil') {
+        this.error("unclosed inhabit guest set — expected ']'", t);
+        return null;
+      }
+      if (t.type === 'punct' && t.value === ']') break;
+      const guest = this.readInhabitToken({ allowRest: false, what: 'a guest' });
+      if (guest == null) return null;
+      if (guests.includes(guest)) {
+        this.error(`participant ${guest} is listed twice in this inhabit guest set`, t);
+        return null;
+      }
+      guests.push(guest);
+    }
+    const close = this.next();
+    if (!guests.length) {
+      this.error('empty inhabit guest set', close);
+      return null;
+    }
+    return guests;
   }
 
   parseValueSequence(name, kind, sig, { alternationOnly = false, topLevel = true } = {}) {
@@ -1515,6 +1696,7 @@ class Parser {
   parseGroupArgs(name, nameTok, sig) {
     const groups = [];
     let media = null;
+    let color = null;
     for (;;) {
       const t = this.peek();
       if (sig.mediaArg && this.atMediaArg()) {
@@ -1531,6 +1713,25 @@ class Parser {
         this.error(`'${name}' takes its medium set last — move it to the end of the directive`, t);
         this.recover();
         return null;
+      }
+      // A color, where the directive takes one: a quoted string, or a bracket
+      // whose first leaf is a quoted string (media sets were claimed above).
+      const colorBracket = t.type === 'punct' && (t.value === '[' || t.value === '<')
+        && (this.peek(this.nextMeaningful(1)) || {}).type === 'string';
+      if (sig.color && (t.type === 'string' || colorBracket)) {
+        if (color != null) {
+          this.error(`'${name}' takes one color`, t);
+          this.recover();
+          return null;
+        }
+        if (t.type === 'string') {
+          this.next();
+          color = t.value;
+        } else {
+          color = this.parseColorPattern(name, t);
+          if (!color) { this.recover(); return null; }
+        }
+        continue;
       }
       if (t.type === 'punct' && (t.value === '[' || t.value === '<')) {
         if (groups.length >= sig.maxGroups) {
@@ -1558,7 +1759,12 @@ class Parser {
       this.recover();
       return null;
     }
-    return { groups, media };
+    if (sig.slots && groups[0] && groups[0].length > sig.slots.length) {
+      this.error(`'${name}' takes ${sig.slots.length} parameter${sig.slots.length === 1 ? '' : 's'}` +
+        ` (${sig.slots.join(', ')}), got ${groups[0].length}`, nameTok);
+      return null;
+    }
+    return { groups, media, color };
   }
 
   // A shape / particle / tessellation directive: its bracket groups read by
@@ -1586,30 +1792,35 @@ class Parser {
     program.chain.push(entry);
   }
 
-  // `# tiling <mode> [count]` — instance the active SHAPE across the frame:
-  // "none" clears, "grid" rows and columns, "hex" honeycomb, "strip" one
-  // horizontal band. The mode is a required word — a bare `# tiling` would
-  // otherwise silently mean nothing — and count (tiles across) patterns like
-  // any other numeric parameter.
-  parseTilingFn(program, name, nameTok, sig) {
+  // `# <name> <mode> [params]` — the directives that lead with a mode word:
+  //   tiling      none | grid | hex | strip            [count]
+  //   controls3d  none | orbit | trackball | map | fly [speed amount]
+  //   lighting3d  none | ambient | directional | point | hemisphere | studio
+  //               [intensity azimuth polar spin] ["color"]
+  // The mode is required — a bare `# tiling` would otherwise silently mean
+  // nothing — and may be bare or quoted, since the mini notation carries a
+  // `.controls3d("orbit")` through as the quoted string. Parameters pattern
+  // like any other numeric parameter.
+  parseModeFn(program, name, nameTok, sig) {
     const modeTok = this.peek();
     let mode = null;
-    if (modeTok.type === 'word' && TILING_MODES.includes(modeTok.value)) {
+    if ((modeTok.type === 'word' || modeTok.type === 'string') && sig.modes.includes(modeTok.value)) {
       mode = modeTok.value;
       this.next();
     } else if (modeTok.type === 'newline' || modeTok.type === 'eof' || modeTok.type === 'sigil'
       || (modeTok.type === 'punct' && (modeTok.value === '[' || modeTok.value === '<'))) {
-      this.error(`tiling needs a mode (${TILING_MODES.join(' | ')}) — write '# tiling grid' to instance the shape, '# tiling none' to clear it`, modeTok);
+      this.error(`${name} needs a mode (${sig.modes.join(' | ')}) — ${sig.modeHint}`, modeTok);
       this.recover();
       return;
     } else {
-      this.error(`'tiling' mode must be one of ${TILING_MODES.join(', ')} — got '${tokenText(modeTok)}'`, modeTok);
+      this.error(`'${name}' mode must be one of ${sig.modes.join(', ')} — got '${tokenText(modeTok)}'`, modeTok);
       this.recover();
       return;
     }
     const read = this.parseGroupArgs(name, nameTok, sig);
     if (!read) return;
-    const entry = { fn: 'tiling', mode, args: read.groups, line: nameTok.line, col: nameTok.col };
+    const entry = { fn: name, mode, args: read.groups, line: nameTok.line, col: nameTok.col };
+    if (read.color != null) entry.color = read.color;
     if (read.media) entry.media = read.media;
     program.chain.push(entry);
   }
@@ -1771,6 +1982,82 @@ class Parser {
     } // else: bare `# background` — background stays null, which clears it
 
     const entry = { fn: 'background', background, line: nameTok.line, col: nameTok.col };
+    if (media) entry.media = media;
+    program.chain.push(entry);
+  }
+
+  // `# out "<device name>" [channel …] [<media>]`
+  parseOut(program, name, nameTok, sig) {
+    const nameArg = this.peek();
+    if (nameArg.type !== 'string') {
+      this.error(nameArg.type === 'word'
+        ? `'${name}' device names are quoted — write '# out "${tokenText(nameArg)}"'`
+        : `'${name}' needs a quoted device name — write '# out "some monitor"'`, nameArg);
+      this.recover();
+      return;
+    }
+    this.next();
+    const target = String(nameArg.value).trim();
+    if (!target) {
+      this.error(`'${name}' needs a device name — an empty one routes nowhere`, nameArg);
+      this.recover();
+      return;
+    }
+    const channels = [];
+    let media = null;
+    for (;;) {
+      const t = this.peek();
+      if (this.atMediaArg()) {
+        if (t.value === '<') {
+          this.error(`'${name}' takes one medium set, not a pattern of them — a route is opened once, not per cycle`, t);
+          this.recover();
+          return;
+        }
+        if (media) {
+          this.error(`'${name}' already has a medium set`, t);
+          this.recover();
+          return;
+        }
+        media = this.parseMediaSet(name);
+        if (!media) { this.recover(); return; }
+        continue;
+      }
+      if (media && !this.atStatementEnd()) {
+        this.error(`'${name}' takes its medium set last — move it to the end of the directive`, t);
+        this.recover();
+        return;
+      }
+      if (t.type === 'number' || t.type === 'intlike') {
+        this.next();
+        const val = typeof t.value === 'number' ? t.value : parseFloat(t.value);
+        if (!Number.isInteger(val) || val < 1) {
+          this.error(`'${name}' channels are whole numbers from 1 — got '${tokenText(t)}'`, t);
+        } else if (channels.includes(val)) {
+          this.error(`'${name}' already names channel ${val}`, t);
+        } else {
+          channels.push(val);
+        }
+        continue;
+      }
+      if (t.type === 'string') {
+        this.error(`'${name}' takes one device name — write a second '# out' line for another device`, t);
+        this.recover();
+        return;
+      }
+      if (t.type === 'punct' && t.value === '(') {
+        this.error(`'${name}' cannot take Strudel-call arguments — write '# out "${target}" 1 2'`, t);
+        this.skipParenBlob();
+        return;
+      }
+      break;
+    }
+    if (!this.atStatementEnd()) {
+      const trailing = this.peek();
+      this.error(`'${name}' got an unexpected argument '${tokenText(trailing)}'`, trailing);
+      this.recover();
+      return;
+    }
+    const entry = { fn: 'out', target, channels: channels.length ? channels.sort((a, b) => a - b) : null, line: nameTok.line, col: nameTok.col };
     if (media) entry.media = media;
     program.chain.push(entry);
   }

@@ -1,0 +1,52 @@
+/* walkie-talkie.css — Walkie Talkie Mode (src/walkie-talkie.js): the small
+   corner screen a walkie participant talks through, and the rule that hides a
+   walkie participant's Jitsi tile from everyone who is not one. Bottom-left,
+   so it never sits under the panic button (bottom-right). Themed with the
+   personal anchors like the studio windows. */
+
+#trussal-walkie {
+  position: fixed; left: 16px; bottom: 16px; z-index: 2147482000;
+  width: min(300px, calc(100vw - 32px));
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+  font-size: calc(12px * var(--trussal-font-scale, 1));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .35);
+}
+#trussal-walkie .tw-head {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--trussal-secondary, #111111);
+}
+#trussal-walkie .tw-title { flex: 1; font-weight: 600; }
+#trussal-walkie .tw-btn {
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: transparent; color: inherit; font: inherit;
+  padding: 1px 6px; cursor: pointer;
+}
+#trussal-walkie .tw-btn[aria-pressed="true"] {
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee);
+}
+#trussal-walkie .tw-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+#trussal-walkie .tw-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px;
+  padding: 4px; max-height: 50vh; overflow-y: auto;
+}
+#trussal-walkie .tw-tile { position: relative; margin: 0; background: #000000; aspect-ratio: 4 / 3; }
+#trussal-walkie .tw-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+#trussal-walkie .tw-self video { transform: scaleX(-1); }
+#trussal-walkie .tw-tile figcaption {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 1px 4px; background: rgba(0, 0, 0, .55); color: #ffffff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#trussal-walkie .tw-status { padding: 0 6px 4px; }
+#trussal-walkie .tw-status:empty { display: none; }
+#trussal-walkie.tw-min .tw-grid,
+#trussal-walkie.tw-min .tw-status { display: none; }
+
+/* A walkie participant has left the meeting as far as a non-walkie viewer is
+   concerned; their Jitsi session (and so their tile) is still up. */
+[data-trussal-walkie-away] { display: none !important; }

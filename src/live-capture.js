@@ -41,6 +41,7 @@
 
 import { listAudioInputDevices } from './latency-instrument.js';
 import { getAllPeers, subscribePeerState } from './peer-state.js';
+import { peerAllowsClipping } from './permissions.js';
 import {
   LiveRing, EventLog, CursorPath, matchAudioDevice, captureSlug,
   parseLiveCaptureArgs, applyMakeupGainAndLimiter, applyEdgeFade,
@@ -136,7 +137,7 @@ function ensureWorklet() {
 
 // A user-typed name → a peer, by display name (exact then substring) or by
 // room-index token. Null when nothing matches.
-function resolvePeerByName(name) {
+export function resolvePeerByName(name) {
   const want = String(name || '').trim().toLowerCase();
   if (!want) return null;
   const peers = getAllPeers();
@@ -149,7 +150,7 @@ function resolvePeerByName(name) {
 // The MediaStream a routed remote participant's audio is playing through —
 // latency-instrument mutes the tag and pipes it into that peer's chain, but the
 // srcObject is still the live stream. id convention: remoteAudio_<jitsiId>.
-function remoteAudioStream(jitsiId) {
+export function remoteAudioStream(jitsiId) {
   if (!jitsiId || typeof document === 'undefined') return null;
   const el = document.getElementById(`remoteAudio_${jitsiId}`)
     || Array.from(document.querySelectorAll('audio')).find(a => a.id && a.id.includes(jitsiId));
@@ -157,7 +158,7 @@ function remoteAudioStream(jitsiId) {
 }
 
 // The <video> element a remote participant's published track renders into.
-function remoteVideoEl(jitsiId) {
+export function remoteVideoEl(jitsiId) {
   if (!jitsiId || typeof document === 'undefined') return null;
   let scoped = null;
   try { scoped = document.querySelector(`#participant_${jitsiId} video`); } catch (e) { /* bad id → fall through */ }
@@ -177,6 +178,10 @@ async function startAudioCapture(cap) {
   let ownsStream = false;
 
   if (peer && !peer.isLocal) {
+    if (!peerAllowsClipping(peer)) {
+      refuseClip(cap, peer);
+      return;
+    }
     stream = remoteAudioStream(peer.jitsiId);
     if (!stream) {
       console.warn(`[liveCapture] audio: participant "${peer.displayName}" has no audio yet — retrying`);
@@ -223,7 +228,7 @@ async function startAudioCapture(cap) {
   source.connect(worklet);
   worklet.connect(sink);
   sink.connect(audioCtx.destination);
-  Object.assign(cap, { state: 'ready', ring, stream, source, worklet, sink, ownsStream });
+  Object.assign(cap, { state: 'ready', ring, stream, source, worklet, sink, ownsStream, _targetPeer: peer && !peer.isLocal ? peer.jitsiId : null });
   console.log(`[liveCapture] audio ← ${label} → s("${cap.slug}")`);
 }
 
@@ -256,6 +261,10 @@ async function startVideoCapture(cap) {
     cap.state = 'failed';
     return;
   }
+  if (!peer.isLocal && !peerAllowsClipping(peer)) {
+    refuseClip(cap, peer);
+    return;
+  }
   const srcEl = remoteVideoEl(peer.jitsiId);
   if (!srcEl) {
     console.warn(`[liveCapture] video: "${peer.displayName}" has no visible video track yet — retrying`);
@@ -281,7 +290,7 @@ async function startVideoCapture(cap) {
   }, Math.round(1000 / 15));
   const timer = setInterval(grab, Math.round(1000 / VIDEO_FPS));
   bucket('video')[cap.slug] = { canvas: playback, playback, live: liveCanvas };
-  Object.assign(cap, { state: 'ready', vid, playback, liveCanvas, timer, liveTimer });
+  Object.assign(cap, { state: 'ready', vid, playback, liveCanvas, timer, liveTimer, _targetPeer: peer.isLocal ? null : peer.jitsiId });
   console.log(`[liveCapture] video ← participant ${peer.displayName} → window._liveCapture.video["${cap.slug}"].canvas`);
 }
 
@@ -547,6 +556,35 @@ function stopDeviceWatch() {
   try { deviceWatch.stop(); } catch (e) { /* ignore */ }
   deviceWatch = null;
 }
+
+// --- permissionsConfig: allowClipping ---------------------------------------
+//
+// A participant whose permissionsConfig says allowClipping: false is not
+// clipped: a capture of their audio or video does not start, and one already
+// running stops — its recording is dropped, and a video's canvas goes blank —
+// the moment their config arrives. Like any failed capture it is retried on a
+// later re-evaluate, so allowing clipping again needs no more than that.
+
+function refuseClip(cap, peer) {
+  console.warn(`[liveCapture] ${cap.medium}: ${peer.displayName || `participant ${peer.roomIndex}`} does not allow clipping — silent`);
+  cap.state = 'failed';
+}
+
+function revokeClips(peer) {
+  for (const [slug, cap] of [...captures]) {
+    if ((cap.medium !== 'audio' && cap.medium !== 'video') || cap.state !== 'ready' || !cap._targetPeer) continue;
+    if (cap._targetPeer !== peer.jitsiId) continue;
+    try { cap.playback && cap.playback.getContext('2d').clearRect(0, 0, VIDEO_W, VIDEO_H); } catch (e) { /* ignore */ }
+    teardown(slug, cap);
+    // Left in place as a failed capture, so the retry rule above applies.
+    captures.set(slug, { medium: cap.medium, name: cap.name, slug, state: 'failed', attemptAt: Date.now(), epoch: cap.epoch, broken: false });
+    refuseClip(cap, peer);
+  }
+}
+
+subscribePeerState((event, peer) => {
+  if (event === 'peer-upsert' && peer && !peer.isLocal && !peerAllowsClipping(peer)) revokeClips(peer);
+});
 
 // --- shared plumbing -----------------------------------------------------
 

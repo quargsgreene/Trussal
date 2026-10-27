@@ -333,7 +333,9 @@ test('conductor settings panel: get returns the admin-form values, set applies t
     assert.deepEqual(applied.settings.roles, {
       frequencyBands: true, staggeredRound: false, unison: true, stereoTiles: false,
     });
-    assert.equal(fleet.cfg.maxBots, 3);
+    // Held on the meeting, not written into the fleet-wide defaults.
+    assert.equal(fleet.cfg.maxBots, 5);
+    assert.equal(fleet.cfg.varyHydra, false);
   });
 });
 
@@ -348,7 +350,7 @@ test('conductor settings panel: endpoint keys and unknown roles are rejected', a
     }, ROOM);
     const blocked = sent.find((m) =>
       m.type === 'fleet-status' && m.action === 'conductor-settings-error' && m.requestId === 'bad1');
-    assert.match(blocked.reason, /not remotely configurable: sidecarWsUrl/);
+    assert.match(blocked.reason, /not configurable from a meeting: sidecarWsUrl/);
     assert.equal(fleet.cfg.sidecarWsUrl, 'ws://localhost:8081/ws');
 
     await fleet.handleBusMessage({
@@ -361,6 +363,31 @@ test('conductor settings panel: endpoint keys and unknown roles are rejected', a
     const badRole = sent.find((m) =>
       m.type === 'fleet-status' && m.action === 'conductor-settings-error' && m.requestId === 'bad2');
     assert.match(badRole.reason, /unknown role: notARole/);
+
+    // Fleet-wide knobs are admin-only: set from one meeting they would retune
+    // every other meeting's bots.
+    await fleet.handleBusMessage({
+      type: 'fleet-request',
+      action: 'conductor-settings-set',
+      fromIndex: '1',
+      requestId: 'bad3',
+      settings: { healthTickMs: 1, sessionSeed: 9 },
+    }, ROOM);
+    const fleetWide = sent.find((m) =>
+      m.type === 'fleet-status' && m.action === 'conductor-settings-error' && m.requestId === 'bad3');
+    assert.match(fleetWide.reason, /not configurable from a meeting: healthTickMs, sessionSeed/);
+    assert.equal(fleet.cfg.sessionSeed, 1);
+
+    await fleet.handleBusMessage({
+      type: 'fleet-request',
+      action: 'conductor-settings-set',
+      fromIndex: '1',
+      requestId: 'bad4',
+      settings: { maxBots: 'lots' },
+    }, ROOM);
+    const nan = sent.find((m) =>
+      m.type === 'fleet-status' && m.action === 'conductor-settings-error' && m.requestId === 'bad4');
+    assert.match(nan.reason, /maxBots must be a positive number/);
   });
 });
 
@@ -884,7 +911,7 @@ test('a room announced on the control channel is served, whatever it is called',
     assert.ok(room, 'the announced room gets its own bus connection');
     assert.match(room.url, /role=fleet/);
     assert.deepEqual(room.sent[0], {
-      type: 'hello', jitsiId: 'fleet-saturday-night', displayName: 'fleet-service', isFleet: true,
+      type: 'hello', jitsiId: 'fleet-saturday-night', displayName: 'fleet-service', isFleet: true, seesWalkie: true,
     });
 
     // A human in that room is what calls for an aggregator.
@@ -1175,4 +1202,145 @@ test('ordinalForSuffix inverts suffixFor (used to gap-refill from live suffixes)
   for (const ordinal of [0, 1, 25, 26, 27, 52, 53, 100]) {
     assert.equal(ordinalForSuffix(suffixFor(ordinal)), ordinal);
   }
+});
+
+// The in-room Conductor is per meeting: one room's panel shapes only that
+// room's bots and answers, and never the fleet defaults another room sees.
+function conductorSet(settings, requestId = 'set') {
+  return { type: 'fleet-request', action: 'conductor-settings-set', fromIndex: '0', requestId, settings };
+}
+
+test('conductor settings are per meeting: one room’s panel leaves another’s alone', async () => {
+  await withDiscoveringFleet(async ({ fleet, bus }) => {
+    await bus.control().handlers.onMessage({ type: 'rooms', rooms: ['mine', 'theirs'] });
+    await fleet.spawnCluster('0', 3, { room: 'theirs' });
+    const theirScripts = fleet.listBots().map((b) => JSON.stringify(b.script));
+
+    await bus.roomConn('mine').deliver(conductorSet({
+      maxBots: 2, varyHydra: true, roles: { frequencyBands: true }, fpsMin: 25,
+    }));
+    const applied = bus.roomConn('mine').sent.find((m) =>
+      m.action === 'conductor-settings' && m.applied);
+    assert.equal(applied.settings.maxBots, 2);
+    assert.equal(applied.settings.roles.frequencyBands, true);
+
+    // The other meeting still reads, and runs on, the fleet defaults.
+    await bus.roomConn('theirs').deliver({
+      type: 'fleet-request', action: 'conductor-settings-get', fromIndex: '0', requestId: 'g',
+    });
+    const theirs = bus.roomConn('theirs').sent.find((m) =>
+      m.action === 'conductor-settings' && m.requestId === 'g');
+    assert.equal(theirs.settings.maxBots, 8);
+    assert.equal(theirs.settings.varyHydra, false);
+    assert.equal(theirs.settings.roles.frequencyBands, false);
+    assert.equal(theirs.settings.fpsMin, 15);
+    assert.deepEqual(fleet.listBots().map((b) => JSON.stringify(b.script)), theirScripts,
+      'another meeting’s settings change regenerated this meeting’s bots');
+    assert.ok(!bus.roomConn('theirs').sent.some((m) => m.action === 'remove'));
+
+    // The meeting's own maxBots caps its own spawns, with its own reason.
+    const status = await fleet.spawnCluster('0', 3, { room: 'mine' });
+    assert.equal(status.spawned, 2);
+    assert.match(status.reason, /this meeting's limit of 2 bots reached/);
+    assert.equal(fleet.listBots().filter((b) => b.room === 'theirs').length, 3);
+  }, { maxBots: 8 });
+});
+
+test('lowering a meeting’s maxBots shrinks only that meeting', async () => {
+  await withDiscoveringFleet(async ({ fleet, bus }) => {
+    await bus.control().handlers.onMessage({ type: 'rooms', rooms: ['mine', 'theirs'] });
+    await fleet.spawnCluster('0', 2, { room: 'theirs' });
+    await fleet.spawnCluster('0', 3, { room: 'mine' });
+    await bus.roomConn('mine').deliver(conductorSet({ maxBots: 1 }));
+    assert.equal(fleet.listBots().filter((b) => b.room === 'mine').length, 1);
+    assert.equal(fleet.listBots().filter((b) => b.room === 'theirs').length, 2);
+  });
+});
+
+test('a meeting’s own health thresholds shrink only its own bots', async () => {
+  await withDiscoveringFleet(async ({ fleet, bus }) => {
+    await bus.control().handlers.onMessage({ type: 'rooms', rooms: ['strict', 'relaxed'] });
+    await fleet.spawnCluster('0', 2, { room: 'relaxed' });
+    await fleet.spawnCluster('0', 2, { room: 'strict' });
+    await bus.roomConn('strict').deliver(conductorSet({ maxBots: 2, fpsMin: 60 }));
+    for (const b of fleet.listBots()) {
+      fleet.metrics.set(b.botId, { botId: b.botId, latencyMs: 20, ramBytes: 100e6, fps: 30, errors: [] });
+    }
+    await fleet.healthTick();
+    // 30fps against its own 60fps floor halves the strict room's ceiling of 2;
+    // the same 30fps is healthy against the fleet default of 15.
+    assert.equal(fleet.listBots().filter((b) => b.room === 'strict').length, 1);
+    assert.equal(fleet.listBots().filter((b) => b.room === 'relaxed').length, 2);
+  }, { maxBots: 8 });
+});
+
+test('a host ceiling shrink takes from the busiest meeting first', async () => {
+  await withDiscoveringFleet(async ({ fleet, bus }) => {
+    await bus.control().handlers.onMessage({ type: 'rooms', rooms: ['busy', 'quiet'] });
+    await fleet.spawnCluster('0', 4, { room: 'busy' });
+    // Spawned last, so newest-first alone would have taken these.
+    await fleet.spawnCluster('0', 2, { room: 'quiet' });
+    await fleet.applyConfig({ maxBots: 4 });
+    assert.equal(fleet.listBots().filter((b) => b.room === 'quiet').length, 2);
+    assert.equal(fleet.listBots().filter((b) => b.room === 'busy').length, 2);
+  }, { maxBots: 6 });
+});
+
+test('a session reset drops the old meeting’s Conductor settings', async () => {
+  await withDiscoveringFleet(async ({ bus }) => {
+    await bus.control().handlers.onMessage({ type: 'rooms', rooms: ['reused'] });
+    const room = bus.roomConn('reused');
+    await room.deliver(conductorSet({ maxBots: 2 }));
+    await room.deliver({ type: 'session-reset' });
+    // The next meeting under the same name, as the relay announces it.
+    await bus.control().handlers.onMessage({ type: 'room-active', room: 'reused' });
+    const next = bus.conns.filter((c) => c.url.includes('room=reused')).at(-1);
+    await next.deliver({
+      type: 'fleet-request', action: 'conductor-settings-get', fromIndex: '0', requestId: 'after',
+    });
+    const after = next.sent.find((m) => m.action === 'conductor-settings' && m.requestId === 'after');
+    assert.equal(after.settings.maxBots, 5);
+  });
+});
+
+test('walkie: the fleet bus hello asks to keep seeing walkie-talkie humans', async () => {
+  await withFleet(async ({ sent }) => {
+    const hello = sent.find((m) => m.type === 'hello');
+    assert.equal(hello.seesWalkie, true);
+  });
+});
+
+test('walkie: every human in Walkie Talkie Mode does not end the meeting', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } }, ROOM);
+    await fleet.handleBusMessage({ type: 'peer-walkie', peerId: 'h', on: true }, ROOM);
+    await new Promise((r) => setTimeout(r, 60)); // meetingEndGraceMs = 30
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true, 'aggregator stays up');
+    assert.ok(!sent.some((m) => m.action === 'teardown'), 'no meeting-end teardown');
+  });
+});
+
+test("walkie: the owner's cluster leaves after the owner grace; turning it off in time keeps it", async () => {
+  await withFleet(async ({ fleet }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'p1', roomIndex: '1', isBot: false } }, ROOM);
+    await fleet.spawnCluster('1', 2, { room: ROOM });
+    await fleet.handleBusMessage({ type: 'peer-walkie', peerId: 'p1', on: true }, ROOM);
+    await fleet.handleBusMessage({ type: 'peer-walkie', peerId: 'p1', on: false }, ROOM);
+    await new Promise((r) => setTimeout(r, 60)); // ownerLeaveGraceMs = 30
+    assert.equal(fleet.listBots().length, 2, 'back before the grace ran out');
+    await fleet.handleBusMessage({ type: 'peer-walkie', peerId: 'p1', on: true }, ROOM);
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(fleet.listBots().length, 0, 'cluster left as if its owner had');
+  });
+});
+
+test('walkie: a roster that lists a walkie owner starts their cluster grace', async () => {
+  await withFleet(async ({ fleet }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'p1', roomIndex: '1', isBot: false } }, ROOM);
+    await fleet.spawnCluster('1', 1, { room: ROOM });
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'p1', roomIndex: '1', isBot: false, walkie: true } }, ROOM);
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(fleet.listBots().length, 0);
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true);
+  });
 });
