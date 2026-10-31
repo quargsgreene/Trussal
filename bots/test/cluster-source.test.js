@@ -8,6 +8,7 @@ import {
   dropCssStatements,
   dropLiveCaptureStatements,
   dropBackingStatements,
+  dropMultimediaStatements,
   masterFromPerformerCode,
 } from '../src/script-gen/cluster-source.js';
 import { validateCode } from '../src/script-gen/validate.js';
@@ -372,6 +373,29 @@ test('dropBackingStatements drops a backing() declaration, keeping the audio', (
   const out = dropBackingStatements(code);
   assert.ok(!out.includes('backing('), 'the backing() declaration is gone');
   assert.match(out, /n\("<0 1>"\)\.s\("piano"\)/, 'the audio pattern survives');
+  assert.equal(validateCode(out).ok, true);
+});
+
+// multiArrange()/multiStack() are installed by the Trussal bundle's
+// strudel.js, never by the vanilla @strudel/repl a bot boots — the same
+// ReferenceError liveCapture() caused, so the same treatment.
+test('botScriptFor never hands the bot REPL a multiArrange() voice, but announces it', () => {
+  const source = captureClusterSource(
+    '$: multiArrange([4, s("bd*4")], [4, word("hi")])\n\n$: n("<0 1>").s("piano")',
+    { seed: 3 },
+  ).source;
+  const { strudel, announceStrudel } = botScriptFor(source, { index: 0, count: 1, seed: 3, botId: 0 });
+  assert.ok(!strudel.includes('multiArrange('), 'the bot REPL never sees multiArrange(');
+  assert.match(strudel, /n\("<0 1>"\)\.s\("piano"\)/, 'the audio pattern survives');
+  assert.equal(validateCode(strudel).ok, true);
+  assert.ok(announceStrudel.includes('multiArrange('), 'the announce keeps it for other viewers');
+});
+
+test('dropMultimediaStatements loses only a multiStack() branch inside a stack()', () => {
+  const code = 'stack(\n  s("bd sd"),\n  multiStack(s("hh*8"), word("x"))\n)';
+  const out = dropMultimediaStatements(code);
+  assert.match(out, /s\("bd sd"\)/);
+  assert.ok(!out.includes('multiStack('));
   assert.equal(validateCode(out).ok, true);
 });
 

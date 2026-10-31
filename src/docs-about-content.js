@@ -805,6 +805,47 @@ const UI_PATTERN_FUNCTIONS = [
       `,
   },
 ]
+const MULTIMEDIA_FUNCTIONS = [
+  {
+    id: 'mm-arrange',
+    name: 'multiArrange',
+    sig: 'multiArrange([cycles, pattern, ...], ..., [options])',
+    body: `
+      <p>Plays sections one after another, each for its number of cycles, like Strudel's
+      <code>arrange</code>, except that a section may hold any medium: Strudel audio, Hydra visuals,
+      text, CSS, files, polls and reactions. Every pattern after the cycle count plays at the same time.
+      Hydra chains are written without <code>.out()</code>, and stay on screen until another Hydra
+      section replaces them. A <code>css()</code> section sequences its chained properties; the SCSS
+      written inside <code>css()</code> itself applies for as long as the pattern runs.</p>
+      <p>The arrangement only moves forward during your turn, so each turn picks up where your last one
+      left off. To stay on the room's beat, a turn that ended part-way through a cycle may repeat up to
+      one cycle of what was already played. With no turns in the room it plays exactly like
+      <code>arrange</code>. Options, given as the last argument:</p>
+      <table>
+        <tr><td><code>resume: false</code></td><td>Follow the room's cycles, like <code>arrange</code>, instead of your turns.</td></tr>
+        <tr><td><code>output: o1</code></td><td>Draw Hydra sections to this output instead of <code>o0</code>.</td></tr>
+      </table>
+      <span>Example:</span>
+      <code>$: multiArrange(
+  [4, s("bd*4"), osc(10).kaleid()],
+  [2, word("&lt;hello there&gt;"), noise(3)],
+  [2, n("0 2 4").scale("C:minor"), css(\`.ts-chip {}\`).borderColor("&lt;#ff00aa #00ffaa&gt;")]
+)
+      </code>`,
+  },
+  {
+    id: 'mm-stack',
+    name: 'multiStack',
+    sig: 'multiStack(pattern, ..., [options])',
+    body: `
+      <p>Plays patterns of any medium at the same time, like Strudel's <code>stack</code>. Several
+      Hydra chains are mixed evenly. Takes the same <code>output</code> option as
+      <code>multiArrange</code>.</p>
+      <span>Example:</span>
+      <code>$: multiStack(s("hh*8"), word("&lt;one two&gt;"), osc(30), shape(4).rotate(0.2))
+      </code>`,
+  },
+];
 const LIVE_CAPTURE_FUNCTIONS = [
   {
     id: 'lc-main',
@@ -1180,7 +1221,7 @@ export function buildDocsBody() {
       <figure>
         <img
           src="https://trussal-docs.quargsgreene.workers.dev/pe_2.png"
-          alt="The personal editor in another theming configuration" />
+          alt="The personal editor in yet another theming configuration" />
         <figcaption>The personal editor in another theming configuration</figcaption>
       </figure>
       <figure>
@@ -1372,14 +1413,11 @@ end</code>
         <figcaption>An example of a multicolor text pattern output</figcaption>
         </figure>
 
+        <h4>Multimedia Sequencing Patterns</h4>
+        ${renderFnSection(MULTIMEDIA_FUNCTIONS)}
+
         <h4>Text Patterns</h4>
         ${renderFnSection(TEXT_CYCLES_FUNCTIONS)}
-        <figure>
-        <img
-          src="https://trussal-docs.quargsgreene.workers.dev/tc_window.png"
-          alt="The words 'I' and 'exist' in the chat window appearing in red, green, and blue" />
-        <figcaption>An example of a multicolor text pattern output</figcaption>
-        </figure>
 
         <h4>CSS Patterns</h4>
         ${renderFnSection(CSS_CYCLES_FUNCTIONS)}
