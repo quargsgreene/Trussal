@@ -25,8 +25,11 @@ Documentation can be found [here](https://trussal.com).
 
 The personal editor's language dropdown can switch from JPattern to pure Strudel, pure Hydra, Punctual, TidalCycles, Sonic Pi, SuperCollider (sclang), Renardo, zwirn, Sardine, or a plain text mode. The terminal-based languages need their own interpreter installed and the local live bridge running (`npm run bridge`, which prints a token to paste into the editor) — per-language setup is in the Docs under "Personal Editor Languages".
 
-## 3. Running locally
+## 3. Architecture Outline
+<img width="5120" height="2880" alt="Trussal Diagram 0 (3)" src="https://github.com/user-attachments/assets/e2028568-1b40-4e21-b94e-303972ffe72e" />
+
+## 4. Running locally
 Clone the repository and install the dependencies. You also need Docker installed. Then run `npm run dev:setup` to build the application. Then run `npm run dev` and navigate to one of the specified URLs in your browser of choice. You should be able to see updates in your browser for most of the application upon saving the corresponding modified file(s). If not, stop the dev server and rebuild. If a port remains stuck in use, try running `npm run dev:down` before further troubleshooting.
 
-## 4. Hosting your own Trussal instance
+## 5. Hosting your own Trussal instance
 You may host your own Trussal instance by modifying site configuration files to point at your own domain and this works much the same way as it does with Jitsi Meet as a whole. See the [!Self-Hosting Guide](https://jitsi.github.io/handbook/docs/devops-guide/) in the Jitsi Meet Handbook for more information.
