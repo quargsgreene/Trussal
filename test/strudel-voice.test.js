@@ -1,7 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { wrapAsVoice } from '../src/strudel-voice.js';
+import { splitSilentPreamble, wrapAsVoice } from '../src/strudel-voice.js';
+
+const declares = (code) => /^\s*await\s+init(?:Css|TextCycles)\s*\(/m.test(code);
+
+test('splitSilentPreamble: a voice sharing the declaration\'s paragraph is not preamble', () => {
+  // Treated as preamble it skips the rewrite: `.borderRadius` reaches Strudel
+  // raw and throws, and word() plays with no renderer.
+  assert.deepEqual(
+    splitSilentPreamble('await initCss()\n$: css(`.a {}`).borderRadius("1em")', declares),
+    { preamble: 'await initCss()', strudel: '$: css(`.a {}`).borderRadius("1em")' },
+  );
+});
+
+test('splitSilentPreamble: the blank-line form is unchanged', () => {
+  assert.deepEqual(
+    splitSilentPreamble('await initCss()\nawait initTextCycles()\n\n$: css(`.a {}`)\n\n$: s("bd")', declares),
+    { preamble: 'await initCss()\nawait initTextCycles()', strudel: '$: css(`.a {}`)\n\n$: s("bd")' },
+  );
+});
+
+test('splitSilentPreamble: declarations alone leave no voice', () => {
+  assert.deepEqual(splitSilentPreamble('await initCss()', declares), { preamble: 'await initCss()', strudel: '' });
+});
+
+test('splitSilentPreamble: a declaration in a later paragraph still counts', () => {
+  // strudel.js decides a block is css from the whole of it, so asking only the
+  // first paragraph here left it never rewritten.
+  assert.deepEqual(
+    splitSilentPreamble('$: s("bd")\n\nawait initCss()\n$: css(`.a {}`)', declares),
+    { preamble: '', strudel: '$: s("bd")\n\nawait initCss()\n$: css(`.a {}`)' },
+  );
+});
+
+test('splitSilentPreamble: a block declaring nothing is not split', () => {
+  assert.equal(splitSilentPreamble('$: s("bd")', declares), null);
+  assert.equal(splitSilentPreamble('', declares), null);
+});
 function isValidJs(code) {
   try {
     // eslint-disable-next-line no-new-func

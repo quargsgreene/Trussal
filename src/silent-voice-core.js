@@ -8,7 +8,7 @@
 // No DOM, no Strudel — runs identically in the browser bundle and under
 // node:test.
 
-import { splitStatements } from './text-cycles-core.js';
+import { splitParagraphs, splitStatements } from './text-cycles-core.js';
 
 // Append `rendererCall` (e.g. "._rxRender()") on its own line to every
 // statement matching `callRe`, so a voice built from a call the performer
@@ -50,7 +50,7 @@ export function stripCalls(code, callRe) {
 // specific combination — an accepted, narrow edge case rather than a fully
 // unified single-pass filter across every silent capability.
 export function keepMatchingStatements(code, callRe, initRe) {
-  return String(code ?? '').split(/\n\n+/).map((paragraph) => {
+  return splitParagraphs(code).map((paragraph) => {
     if (!paragraph.trim()) return null;
     const survivors = splitStatements(paragraph)
       .filter(({ text }) => callRe.test(text) || (initRe && initRe.test(text.trim())))

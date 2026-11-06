@@ -13,6 +13,7 @@ import { DIRECTIVE_LINE_PATTERN } from '../../../src/program-directive.js';
 import { PERMISSIONS_CONFIG_STATEMENT_PATTERN } from '../../../src/permissions-config.js';
 import { INIT_TEXT_CYCLES_PATTERN, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { INIT_CSS_PATTERN, CSS_CALL_RE } from '../../../src/css-cycles-core.js';
+import { BOT_REPL_ABSENT_CALL_RE, BOT_REPL_ABSENT_INIT_RE } from '../script-gen/cluster-source.js';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
@@ -85,6 +86,11 @@ export class Bot {
       css: { source: CSS_CALL_RE.source, flags: CSS_CALL_RE.flags },
       initTextCycles: INIT_TEXT_CYCLES_PATTERN,
       initCss: INIT_CSS_PATTERN,
+      // Everything else the performer's editor can hold that this REPL cannot
+      // evaluate. A pushed edit is usually a bot's announced program coming
+      // back, or something pasted from a human's editor.
+      absentCalls: { source: BOT_REPL_ABSENT_CALL_RE.source, flags: BOT_REPL_ABSENT_CALL_RE.flags },
+      absentInits: { source: BOT_REPL_ABSENT_INIT_RE.source, flags: BOT_REPL_ABSENT_INIT_RE.flags },
       // Same shape pattern as above, handed over again so wrapPreambleMini's
       // mini-off/mini-on guard (and its `await initHydra()` injection) agrees
       // with declaresOwnPreamble about what counts as a Hydra preamble — a

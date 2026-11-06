@@ -10,8 +10,30 @@ import {
   mosaicCellSource,
   programDeclaresHydra,
   ensureCapabilityPreambles,
-  looksLikeHydra
+  looksLikeHydra,
+  stripCapabilityPreambles
 } from '../src/hydra-code.js';
+import { mosaicCellsForPeers } from '../src/audio-net/MosaicCells.js';
+
+test('hydra-code: stripCapabilityPreambles removes every line ensureCapabilityPreambles can add', () => {
+  const code = 'osc(10).out()\n\n$: word("hi")\n$: css(`.x { color: red }`)\n$: image("a.png")\n$: poll("a?")';
+  const added = ensureCapabilityPreambles(code);
+  for (const name of ['initHydra', 'initTextCycles', 'initCss', 'initFileCycles', 'initPolls']) {
+    assert.ok(added.includes(name), `the shape implies ${name}`);
+  }
+  assert.equal(stripCapabilityPreambles(added), code);
+});
+
+// Live-confirmed: any program with both Hydra and a word() voice left the
+// aggregator's stage black ("cell 0 (hydra) failed: initTextCycles is not
+// defined"). The word() voice brings its init line into the Hydra preamble, and
+// on the aggregator's page it threw before the first render call.
+test('mosaic: a cell runs only Hydra, whatever else the block implies', () => {
+  const pattern = "'personal editor'\nosc(100)\n.out()\n\n\nlead: s(\"sine\")\ntext: typeface(\"Monaco\").word(\"hi\")\n\nfx: reaction(\"tu\")\n\nbotConfig({\"spawn\":3})\n";
+  const [cell] = mosaicCellsForPeers([{ roomIndex: '0', playing: true, jitsiId: 'j', pattern }]);
+  assert.equal(cell.source, 'reexecute');
+  assert.equal(cell.preamble, 'osc(100)\n.out()');
+});
 
 test('hydra-code: a plain Strudel block is not Hydra', () => {
   assert.equal(hasHydraCode('s("bd sd").fast(2)'), false);

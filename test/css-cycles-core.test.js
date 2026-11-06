@@ -84,10 +84,96 @@ test('a non-css statement is untouched', () => {
   assert.equal(code, '$: s("bd*4").gain(0.8)');
 });
 
-test('css() without backticks is refused with an explanation', () => {
-  const { errors } = rewriteCssCalls('$: css(".example").color("red")');
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /backticks/);
+test('css() takes a quoted selector, so camelCase properties chain off it', () => {
+  // The form the docs show, and the only one mondo can write on one line.
+  for (const quoted of ['".ts-chip"', "'.ts-chip'"]) {
+    const { code, atoms, sheets, errors } = rewriteCssCalls(
+      `$:css(${quoted})\n.borderRadius("<1em 2em>")`, { peer: 'abc' });
+    assert.deepEqual(errors, []);
+    assert.match(code, /css\("cc0"\)\._cc_borderRadius\("<cc1 cc2>"\)/);
+    assert.doesNotMatch(code, /\.borderRadius\(/);
+    assert.equal(atoms.cc0.text, '.ts-chip {}');
+    assert.equal(selectorOf(sheets[0]), '.ts-chip');
+    assert.deepEqual(sheets[0].props.map((p) => p.prop), ['border-radius']);
+  }
+});
+
+test('css() takes SCSS in plain quotes too, unescaping them', () => {
+  const { atoms, errors } = rewriteCssCalls('$: css(".x { content: \\"a\\" }").color("red")', { peer: 'abc' });
+  assert.deepEqual(errors, []);
+  assert.equal(atoms.cc0.text, '.x { content: "a" }');
+});
+
+test('a css() that cannot be read is refused without taking the program down', () => {
+  // Left in place its `.borderRadius` reaches Strudel raw, and that throw stops
+  // every voice in the room, not just this one.
+  for (const bad of ['css(sel)', 'css("")', 'css(`.a`, 2)', 'css()']) {
+    const { code, errors, sheets } = rewriteCssCalls(`$: s("bd")\n\n$: ${bad}.borderRadius("1em")`, { peer: 'abc' });
+    assert.equal(errors.length, 1, bad);
+    assert.match(errors[0], /selector or SCSS/);
+    assert.equal(code, '$: s("bd")', bad);
+    assert.deepEqual(sheets, []);
+  }
+});
+
+test('every css() in a statement is rewritten, not just the first', () => {
+  const { code, sheets, errors } = rewriteCssCalls(
+    '$: stack(css(`.a {}`).color("red"), css(`.b {}`).borderRadius("1em"))', { peer: 'abc' });
+  assert.deepEqual(errors, []);
+  assert.doesNotMatch(code, /\.borderRadius\(/);
+  assert.match(code, /_cc_borderRadius/);
+  assert.deepEqual(sheets.map(selectorOf), ['.a', '.b']);
+  assert.equal(code.match(/\._ccRender\(\)/g).length, 1);
+});
+
+test('a css() nested in a chained call is rewritten', () => {
+  const { code, sheets } = rewriteCssCalls(
+    '$: css(`.a {}`).color("red").stack(css(`.b {}`).borderRadius("1em")).fast(2)', { peer: 'abc' });
+  assert.doesNotMatch(code, /\.borderRadius\(/);
+  assert.match(code, /\.fast\(2\)/);
+  assert.equal(sheets.length, 2);
+});
+
+test('comments inside a chain do not end it', () => {
+  const { code, sheets } = rewriteCssCalls(
+    '$: css(`.a {}`)\n  // round it\n  .borderRadius("1em")\n  /* then tint */\n  .color("red")', { peer: 'abc' });
+  assert.doesNotMatch(code, /\.borderRadius\(/);
+  assert.deepEqual(sheets[0].props.map((p) => p.prop), ['border-radius', 'color']);
+});
+
+test('multi-line SCSS stays one statement, whatever its lines look like', () => {
+  const bodies = [
+    '.a {\n  color: #eee;\n}',                  // reads as a label
+    '.a {\n  color: #eee;\n\n  margin: 0;\n}',  // a blank line
+    'a:hover {\n  color: #eee;\n}',             // the selector reads as a label too
+    '/* note: here */\n.a {\n  color: #eee;\n}',
+  ];
+  for (const body of bodies) {
+    const { code, atoms, sheets, errors } = rewriteCssCalls(`$: css(\`${body}\`).borderRadius("1em")`, { peer: 'abc' });
+    assert.deepEqual(errors, [], body);
+    assert.equal(atoms.cc0.text, body);
+    assert.equal(sheets.length, 1, body);
+    assert.equal(code, '$: css("cc0")._cc_borderRadius("cc1")\n._ccRender()', body);
+  }
+});
+
+test('a real label after multi-line SCSS still starts its own statement', () => {
+  const { code } = rewriteCssCalls('$: css(`.a {\n  color: #eee;\n}`).color("red")\n$: s("bd")', { peer: 'abc' });
+  assert.match(code, /\._ccRender\(\)\n\$: s\("bd"\)$/);
+});
+
+test('keepSilentStatements keeps a whole multi-line css() and drops the audio', () => {
+  const css = '$: css(`.a {\n  color: #eee;\n\n  margin: 0;\n}`).borderRadius("1em")';
+  assert.equal(keepSilentStatements(`${css}\n\n$: s("bd")`), css);
+});
+
+test('css( inside a string or comment is not a call', () => {
+  for (const src of ['$: word("try css(foo) out")', '$: s("bd") // css(foo) later']) {
+    const { code, errors, sheets } = rewriteCssCalls(src, { peer: 'abc' });
+    assert.equal(code, src);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(sheets, []);
+  }
 });
 
 

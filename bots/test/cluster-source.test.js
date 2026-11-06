@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   botScriptFor,
@@ -9,6 +10,7 @@ import {
   dropLiveCaptureStatements,
   dropBackingStatements,
   dropMultimediaStatements,
+  dropRoomActionStatements,
   masterFromPerformerCode,
 } from '../src/script-gen/cluster-source.js';
 import { validateCode } from '../src/script-gen/validate.js';
@@ -349,6 +351,58 @@ test('css() inside a stack() loses only its own branch, not its siblings', () =>
   assert.equal(validateCode(out).ok, true);
 });
 
+// A blank line inside a css() template is SCSS, not a paragraph break. Treated
+// as a break, the half holding `css(` is dropped and the rest reaches the bot's
+// REPL as a syntax error, which fails the whole bot.
+const SCSS_WITH_BLANK_LINE = '$: css(`.foo {\n  color: red;\n\n  opacity: 0.5;\n}`).borderRadius("1px 2px")';
+
+test('dropCssStatements drops a css() whole when its SCSS holds a blank line', () => {
+  const code = `await initCss()\n\n${SCSS_WITH_BLANK_LINE}\n\n$: s("bd sd")`;
+  assert.equal(dropCssStatements(code), '$: s("bd sd")');
+});
+
+test('dropCssStatements keeps a voice written straight under a css() with a blank line', () => {
+  assert.equal(dropCssStatements(`${SCSS_WITH_BLANK_LINE}\n$: s("bd sd")`), '$: s("bd sd")');
+});
+
+test('css() with a blank line inside a stack() loses only its own branch', () => {
+  const code = 'stack(\n  s("bd sd"),\n  css(`.foo {\n\n  color: red;\n}`)\n)';
+  const out = dropCssStatements(code);
+  assert.match(out, /s\("bd sd"\)/, 'the audio branch survives');
+  assert.ok(!out.includes('color: red'), 'no piece of the css() branch survives');
+  assert.equal(validateCode(out).ok, true);
+});
+
+test('dropCssStatements drops a commented-out css() with a blank line in the comment', () => {
+  const code = '/* css(`.foo{}`)\n\nold idea */\n$: s("bd sd")';
+  assert.equal(dropCssStatements(code), '$: s("bd sd")');
+});
+
+test('dropping another capability leaves a css() with a blank line intact', () => {
+  const code = `$: word("hello")\n\n${SCSS_WITH_BLANK_LINE}`;
+  assert.equal(dropTextStatements(code), SCSS_WITH_BLANK_LINE);
+});
+
+test('a bot never receives a piece of a css() with a blank line in its SCSS', () => {
+  const body = `await initCss()\n\n${SCSS_WITH_BLANK_LINE}\n\n$: s("bd sd")`;
+  const script = (code) => botScriptFor(capture(code), { index: 1, count: 2, seed: 7, botId: 1 });
+
+  const declared = script(`botConfig({ harmony: "+2" })\n${body}`);
+  for (const [name, out] of [['eval', declared.strudel], ['announce', declared.announceStrudel]]) {
+    assert.ok(!out.includes('opacity'), `declared ${name} carries no piece of the css()`);
+    assert.match(out, /s\("bd sd"\)/, `declared ${name} keeps the audio voice`);
+    assert.deepEqual(validateCode(out), { ok: true }, `declared ${name} parses`);
+  }
+
+  // An undeclared cluster is an exact copy: its own REPL still cannot run css(),
+  // but the announce carries it to the room, blank line and all.
+  const copy = script(body);
+  assert.ok(!copy.strudel.includes('opacity'), 'undeclared eval carries no piece of the css()');
+  assert.deepEqual(validateCode(copy.strudel), { ok: true });
+  assert.ok(copy.announceStrudel.includes(SCSS_WITH_BLANK_LINE), 'undeclared announce keeps the whole css()');
+  assert.deepEqual(validateCode(copy.announceStrudel), { ok: true });
+});
+
 // --- Live capture: dropLiveCaptureStatements, another css()/word() sibling ---
 //
 // A bot's own audio-producing REPL never runs strudel.js's
@@ -389,6 +443,89 @@ test('botScriptFor never hands the bot REPL a multiArrange() voice, but announce
   assert.match(strudel, /n\("<0 1>"\)\.s\("piano"\)/, 'the audio pattern survives');
   assert.equal(validateCode(strudel).ok, true);
   assert.ok(announceStrudel.includes('multiArrange('), 'the announce keeps it for other viewers');
+});
+
+// Live-confirmed on trussal.com: a performer's program with one
+// `reaction("tu, h")` voice left all three of their bots with a ReferenceError
+// in the vanilla REPL. Each sat silent, showing the room's default pattern, and
+// was replaced by another that failed the same way.
+test('a real program with a reaction() voice boots: Hydra, audio and no room actions', () => {
+  const source = captureClusterSource([
+    "'personal editor'",
+    'osc(100)\n.kaleid(20)\n.colorama(0.4)\n.out()',
+    '',
+    '',
+    'lukewarm: s("sine, pink")\n.note("a2, d1, b4, e5")\n.degrade()\n.slow(16)',
+    'gjhfdhslgf: typeface("Monaco").word("<ʀ̟ʢ̠ʔ̆>").color("<white pink>")\n.speak()',
+    '',
+    'meatsticks: reaction("tu, h")',
+    '',
+    'botConfig({"spawn":3, "random": "params"})',
+  ].join('\n'), { seed: 1 }).source;
+  const { strudel, hydra, announceStrudel } = botScriptFor(source, { index: 0, count: 3, seed: 1, botId: 0 });
+
+  assert.match(strudel, /lukewarm: s\("sine, pink"\)/, 'the audio voice survives');
+  assert.match(hydra, /\.kaleid\(/, 'the Hydra survives');
+  for (const gone of ['reaction(', 'word(', 'botConfig(']) {
+    assert.ok(!strudel.includes(gone), `the bot REPL never sees ${gone}`);
+    assert.ok(!announceStrudel.includes(gone), `the announce does not claim ${gone}`);
+  }
+  assert.equal(validateCode(strudel).ok, true);
+});
+
+for (const [name, call] of [
+  ['reaction', 'reaction("tu, h")'],
+  ['unreact', 'unreact("<1 2>")'],
+  ['panel', 'panel("<red blue>")'],
+  ['image', 'image("a.png")'],
+  ['video', 'video("a.mp4")'],
+  ['textFile', 'textFile("a.txt")'],
+  ['pdfFile', 'pdfFile("a.pdf")'],
+  ['soundFile', 'soundFile("a.wav")'],
+  ['poll', 'poll("yes or no?")'],
+  ['vote', 'vote("yes")'],
+  ['close', 'close("yes or no?")'],
+  ['breakout', 'breakout("2")'],
+  ['assign', 'assign("0 1")'],
+  ['meeting', 'meeting("elsewhere")'],
+]) {
+  test(`dropRoomActionStatements drops a ${name}() voice, keeping the audio`, () => {
+    const out = dropRoomActionStatements(`$: ${call}\n$: n("<0 1>").s("piano")`);
+    assert.ok(!out.includes(`${name}(`), `the ${name}() voice is gone`);
+    assert.match(out, /n\("<0 1>"\)\.s\("piano"\)/, 'the audio pattern survives');
+    assert.equal(validateCode(out).ok, true);
+  });
+}
+
+test('dropRoomActionStatements loses only a reaction() branch inside a stack()', () => {
+  const out = dropRoomActionStatements('stack(\n  s("bd sd"),\n  reaction("tu")\n)');
+  assert.match(out, /s\("bd sd"\)/);
+  assert.ok(!out.includes('reaction('));
+  assert.equal(validateCode(out).ok, true);
+});
+
+test('a preamble line only a browser can run does not reach a bot', () => {
+  const source = captureClusterSource('osc(10).out()\n\n$: poll("a?")\n$: image("a.png")\n$: s("bd")', { seed: 1 }).source;
+  const { strudel, hydra } = botScriptFor(source, { index: 0, count: 1, seed: 1, botId: 0 });
+  for (const text of [strudel, hydra]) assert.doesNotMatch(text, /init(?:Polls|FileCycles|TextCycles|Css|Hydra)/);
+  assert.match(strudel, /s\("bd"\)/);
+});
+
+// The bug class behind liveCapture(), backing(), multiArrange() and reaction()
+// reaching a bot one release at a time: strudel.js grows a capability, the
+// vanilla REPL a bot boots does not, and nothing says so until a live room's
+// bots fail. Adding to this list is the moment to decide what a bot does with
+// it — strip it in cluster-source.js, or give the REPL an equivalent.
+test('everything the human REPL adds to Strudel has been decided for bots', () => {
+  const src = readFileSync(new URL('../../src/strudel.js', import.meta.url), 'utf8');
+  const scope = /mod\.evalScope\(\{([^}]*)\}\)/.exec(src);
+  assert.ok(scope, 'strudel.js still builds its scope in one evalScope({...}) call');
+  assert.deepEqual(scope[1].split(',').map((s) => s.trim()).filter(Boolean).sort(), [
+    '...breakoutScope', '...cssScope', '...fileScope', '...meetingScope', '...multimediaScope',
+    '...panelScope', '...pollScope', '...reactionScope', '...textScope',
+    '_data', '_jpGate', '_liveCaptureSilent', 'initHydra', 'liveCapture',
+    'mondi', 'mondo', 'mondolang', 'sliderWithID',
+  ].sort());
 });
 
 test('dropMultimediaStatements loses only a multiStack() branch inside a stack()', () => {

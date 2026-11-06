@@ -444,15 +444,63 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   const dropPairs = [
     [toRegex(cap.initTextCycles), toRegex(cap.word)],
     [toRegex(cap.initCss), toRegex(cap.css)],
+    [toRegex(cap.absentInits), toRegex(cap.absentCalls)],
   ].filter(([initRe, callRe]) => initRe && callRe);
   const LABEL_RE = /^\s*(?:\$|[a-zA-Z_$][\w$]*)\s*:/;
+  // Each line, flagged with whether it opens at top level rather than inside a
+  // template literal or block comment, the only constructs here that span lines.
+  // `color: red` on a line of multi-line SCSS inside css(`…`) reads exactly like
+  // a label, and a blank line in there exactly like a paragraph break; splitting
+  // at either tears the statement in half, and only the first half gets dropped.
+  const flagLines = (text) => {
+    let mode = null; // null | '`' | '*'
+    return text.split('\n').map((line) => {
+      const topLevel = mode === null;
+      let quote = null; // a quote only runs to the end of its line
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (mode === '`') {
+          if (c === '\\') i++;
+          else if (c === '`') mode = null;
+        } else if (mode === '*') {
+          if (c === '*' && line[i + 1] === '/') { mode = null; i++; }
+        } else if (quote) {
+          if (c === '\\') i++;
+          else if (c === quote) quote = null;
+        } else if (c === '"' || c === "'") {
+          quote = c;
+        } else if (c === '`') {
+          mode = '`';
+        } else if (c === '/' && line[i + 1] === '/') {
+          break;
+        } else if (c === '/' && line[i + 1] === '*') {
+          mode = '*';
+          i++;
+        }
+      }
+      return { line, topLevel };
+    });
+  };
   const splitLabelUnits = (text) => {
-    const lines = text.split('\n');
     const out = [];
     let cur = [];
-    for (const line of lines) {
-      if (LABEL_RE.test(line) && cur.length) { out.push(cur.join('\n')); cur = []; }
+    for (const { line, topLevel } of flagLines(text)) {
+      if (topLevel && LABEL_RE.test(line) && cur.length) { out.push(cur.join('\n')); cur = []; }
       cur.push(line);
+    }
+    if (cur.length) out.push(cur.join('\n'));
+    return out;
+  };
+  const splitParagraphs = (text) => {
+    const out = [];
+    let cur = [];
+    for (const { line, topLevel } of flagLines(text)) {
+      if (topLevel && line === '') {
+        if (cur.length) out.push(cur.join('\n'));
+        cur = [];
+      } else {
+        cur.push(line);
+      }
     }
     if (cur.length) out.push(cur.join('\n'));
     return out;
@@ -526,7 +574,7 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
       if (initRe.test(chunk) || callRe.test(chunk)) return null;
       return chunk;
     };
-    const kept = src.split(/\n\n+/).map((paragraph) => {
+    const kept = splitParagraphs(src).map((paragraph) => {
       if (!paragraph.trim()) return null;
       const survivors = splitLabelUnits(paragraph)
         .map(dropChunk)
@@ -1434,9 +1482,7 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
     // bots executing broken code are terminated and replaced).
     await new Promise((r) => setTimeout(r, 2000));
     const repl = editor.editor && editor.editor.repl;
-    if (!(repl && repl.scheduler && repl.scheduler.started)) {
-      throw new Error('pattern did not start after evaluation (likely a runtime eval error)');
-    }
+    const started = Boolean(repl && repl.scheduler && repl.scheduler.started);
     // Publish the (editable) Strudel pattern onto the Trussal peer-state bus so
     // it shows in every studio. The bundle exposes this once it has connected;
     // poll briefly since the Trussal app boots independently of this REPL.
@@ -1477,6 +1523,14 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
       try { window.__trussalAnnounceLocalPattern(announced); } catch (err) {
         window.__trussalReportError(err);
       }
+    }
+    // After the announce, not before it: a bot that failed to evaluate must
+    // still show the code it was given, or the Studio has nothing to show for
+    // it and the failure is unreadable. The reason is Strudel's own — it keeps
+    // eval errors to itself, so this is the only place to read them from.
+    if (!started) {
+      const why = repl && repl.state && repl.state.evalError;
+      throw new Error(`pattern did not start after evaluation (${(why && why.message) || why || 'likely a runtime eval error'})`);
     }
   } catch (e) {
     window.__trussalReportError(e);

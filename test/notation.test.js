@@ -54,6 +54,41 @@ test('mondoToMini: a single-line backtick arg (CSS Cycles) is one token', () => 
   );
 });
 
+test('mondoToMini: a backtick arg left open runs across lines, keeping them', () => {
+  assert.equal(
+    mondoToMini('$ css `.x {\n  color: red;\n}`\n# borderRadius <1em 2em>'),
+    '$: css(`.x {\n  color: red;\n}`)\n.borderRadius("<1em 2em>")',
+  );
+});
+
+test('mondoToMini: a quoted selector with a caret-grouped camelCase property', () => {
+  assert.equal(
+    mondoToMini('$ css ".something"\n# borderRadius <^1em 2em 3em 4em^ ^2em 4em 6em 8em^>'),
+    '$: css(".something")\n.borderRadius("<^1em 2em 3em 4em^ ^2em 4em 6em 8em^>")',
+  );
+});
+
+test('mondoToMini: a value no JS expression can be is quoted', () => {
+  assert.equal(mondoToMini('# fontSize 14px'), '.fontSize("14px")');
+  assert.equal(mondoToMini('# margin -1.5em'), '.margin("-1.5em")');
+  assert.equal(mondoToMini('# width 50%'), '.width("50%")');
+  assert.equal(mondoToMini('# color #abcdef'), '.color("#abcdef")');
+  // Real numbers and expressions are still carried through as written.
+  assert.equal(mondoToMini('# gain 0.5'), '.gain(0.5)');
+  assert.equal(mondoToMini('# gain -1'), '.gain(-1)');
+  assert.equal(mondoToMini('# gain 1e3'), '.gain(1e3)');
+  assert.equal(mondoToMini('# gain 0xff'), '.gain(0xff)');
+});
+
+test('mondoToMini: liveCapture names need no quotes, as its signature shows', () => {
+  assert.equal(mondoToMini('$ liveCapture audio'), '$: liveCapture("audio")');
+  assert.equal(mondoToMini('$ liveCapture video Ada'), '$: liveCapture("video", "Ada")');
+  assert.equal(
+    mondoToMini('$ liveCapture audio "MOTU M4" true\n# struct <x ~ x>'),
+    '$: liveCapture("audio", "MOTU M4", true)\n.struct("<x ~ x>")',
+  );
+});
+
 test('mondoToMini: live() with a device label and a mini struct', () => {
   assert.equal(
     mondoToMini('$ live "Scarlett 2i2 (Focusrite)"\n# struct <x ~ x>'),

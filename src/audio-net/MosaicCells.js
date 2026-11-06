@@ -10,7 +10,7 @@
 // Pure, so the aggregator can be tested without a browser: the page script is
 // handed the result and does nothing but create, destroy and draw.
 
-import { mosaicCellSource, splitHydraCode, usesPatternParams } from '../hydra-code.js';
+import { mosaicCellSource, splitHydraCode, stripCapabilityPreambles, usesPatternParams } from '../hydra-code.js';
 
 // A peer earns a cell when it is a real ring participant running Hydra. The
 // aggregator itself is excluded by its own `isAggregator` flag — the sidecar
@@ -43,7 +43,11 @@ export function mosaicCellsForPeers(peers) {
       source,
       // Only the preamble crosses into the page — the Strudel half is audio,
       // and the aggregator already has that peer's sound on the master bus.
-      preamble: splitHydraCode(peer.pattern).preamble,
+      // Without its `await initX()` lines: the split leaves whichever ones the
+      // whole block implies (a word() voice brings `await initTextCycles()`)
+      // ahead of the render calls, and on the aggregator's page they would
+      // throw before anything is drawn, leaving this cell black.
+      preamble: stripCapabilityPreambles(splitHydraCode(peer.pattern).preamble),
       // Whether this cell must wait for the Strudel pattern machinery before
       // its preamble runs: `H(...)` binds a parameter at evaluation time, so a
       // cell evaluated too early binds the fallback for the instance's life.

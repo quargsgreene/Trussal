@@ -230,6 +230,37 @@ test('health policy preserved: eval-error bot is replaced, keeping its owner', a
   });
 });
 
+test('an eval-error replacement tells the room why, first line only', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await fleet.spawnCluster('1', 2, { room: ROOM });
+    for (const b of fleet.listBots()) {
+      fleet.metrics.set(b.botId, {
+        botId: b.botId, latencyMs: 50, ramBytes: 100e6, fps: 30,
+        errors: b.clusterIndex === '1b'
+          ? ['Error: pattern did not start after evaluation (reaction is not defined)\n    at boot (page.js:1:1)']
+          : []
+      });
+    }
+    await fleet.healthTick();
+    const status = sent.find(m => m.type === 'fleet-status' && m.action === 'bot-error');
+    assert.equal(status.ownerIndex, '1');
+    assert.equal(status.clusterIndex, '1b');
+    assert.equal(status.reason, 'Error: pattern did not start after evaluation (reaction is not defined)');
+  });
+});
+
+test('a replacement that is not an eval error says nothing to the room', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await fleet.spawnCluster('1', 4, { room: ROOM });
+    const bots = fleet.listBots();
+    bots.forEach((b, i) => fleet.metrics.set(b.botId, {
+      botId: b.botId, latencyMs: i === 0 ? 900 : 10, ramBytes: 100e6, fps: 30, errors: []
+    }));
+    await fleet.healthTick();
+    assert.equal(sent.find(m => m.type === 'fleet-status' && m.action === 'bot-error'), undefined);
+  });
+});
+
 test('HTTP contract preserved: /assignment/:botId and POST /metrics', async () => {
   await withFleet(async ({ fleet }) => {
     await fleet.spawnCluster('0', 1, { room: ROOM });

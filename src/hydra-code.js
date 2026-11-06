@@ -93,9 +93,9 @@ export function ensureCapabilityPreambles(code) {
   return `${s.slice(0, cut).replace(/\s*$/, '')}\n${adds.join('\n')}${s.slice(cut)}`;
 }
 
-// Inverse of the three `await initX()` lines ensureCapabilityPreambles above
-// can add: strip them back off, leaving only the shape that implied them.
-// Whoever next evaluates the result re-adds exactly what this removed —
+// Inverse of the `await initX()` lines ensureCapabilityPreambles above can add:
+// strip them back off, leaving only the shape that implied them. Whoever next
+// evaluates the result re-adds exactly what this removed —
 // ensureCapabilityPreambles again for a browser (normalizePeerCode runs it on
 // every peer's code before use), pageStrudelBoot's own equivalent injection
 // for a bot's own REPL (see bots/src/bot/page-scripts.js) — so stripping here
@@ -108,15 +108,17 @@ export function ensureCapabilityPreambles(code) {
 // a human, whose own broadcast pattern is always exactly what they typed
 // (peer-state.js's sendLocalPattern sends the raw editor text, never routed
 // through ensureCapabilityPreambles first).
-const STRIP_INIT_HYDRA_RE = /(^|\n)[ \t]*await\s+initHydra\s*\([^)]*\)\s*;?[ \t]*\n*/;
-const STRIP_INIT_TEXT_CYCLES_RE = /(^|\n)[ \t]*await\s+initTextCycles\s*\([^)]*\)\s*;?[ \t]*\n*/;
-const STRIP_INIT_CSS_RE = /(^|\n)[ \t]*await\s+initCss\s*\([^)]*\)\s*;?[ \t]*\n*/;
+//
+// Used by MosaicCells.js too: the injection splices every line a block's shape
+// implies into its Hydra preamble, and the only one the aggregator's page can
+// run is its own stand-in for initHydra. Anything else left in there throws
+// before the preamble's first render call.
+const STRIP_INIT_RES = ['initHydra', 'initTextCycles', 'initCss', 'initFileCycles', 'initPolls']
+  .map((name) => new RegExp(`(^|\\n)[ \\t]*await\\s+${name}\\s*\\([^)]*\\)\\s*;?[ \\t]*\\n*`));
 
 export function stripCapabilityPreambles(code) {
   let s = String(code ?? '');
-  s = s.replace(STRIP_INIT_HYDRA_RE, '$1');
-  s = s.replace(STRIP_INIT_TEXT_CYCLES_RE, '$1');
-  s = s.replace(STRIP_INIT_CSS_RE, '$1');
+  for (const re of STRIP_INIT_RES) s = s.replace(re, '$1');
   return s.replace(/^\n+/, '');
 }
 

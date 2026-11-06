@@ -42,7 +42,7 @@ import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync, ensureCamera
 import { normalizePeerCode, splitHydraCode, programDeclaresHydra, usesExternalSource } from './hydra-code.js';
 import { readDirective } from './program-directive.js';
 import { textLog, textLogChanged, textWarn, registerTextProbe, clip } from './text-debug.js';
-import { wrapAsVoice } from './strudel-voice.js';
+import { splitSilentPreamble, wrapAsVoice } from './strudel-voice.js';
 import { installMultimedia } from './multimedia.js';
 import { injectMultiPeer } from './multimedia-core.js';
 // mondo notation for the personal editor: importing registers `mondo`/`mondolang`
@@ -148,17 +148,8 @@ function effectChainFor(params) {
 // anchored to the start of the BLOCK while the predicates anchor to a line, so
 // a single comment above `await initTextCycles()` was enough to split them.
 function splitSilentCode(code) {
-  if (!code) return null;
-  const blank = code.match(/\n\n+/);
-  // Before the first blank line — the preamble is where a declaration counts,
-  // exactly as for Hydra.
-  const preamble = blank ? code.slice(0, blank.index) : code;
-  if (!hasTextCycles(preamble) && !hasCssCycles(preamble) && !hasFileCycles(preamble) && !hasPollCycles(preamble)) return null;
-  if (!blank) return { preamble: code, strudel: '' };
-  return {
-    preamble: preamble.trim(),
-    strudel: code.slice(blank.index).trim()
-  };
+  return splitSilentPreamble(code, (text) =>
+    hasTextCycles(text) || hasCssCycles(text) || hasFileCycles(text) || hasPollCycles(text));
 }
 
 // Text Cycles atoms for the program currently being assembled. Literal words
@@ -571,15 +562,7 @@ function buildPeerBlock(peer) {
   // own.
   const hydraSplit = splitHydraCode(code);
   const split = hydraSplit || splitSilentCode(code);
-  // STORAGE POINT 2: this peer's contribution to the program, as decided. The
-  // one way a text block silently produces nothing is landing here unsplit:
-  // isText is true, so the code is text, but with no preamble to split off the
-  // rewrite below never runs and the renderer is never attached.
-  if (isText && !split) {
-    textWarn(`peer-block:${peer.jitsiId ?? peer.peerId}`,
-      'declares initTextCycles() but no preamble could be split off, so nothing will be rewritten or rendered',
-      { why: 'the declaration must be on its own line before the first blank line, with the patterns after it', code: clip(code) });
-  }
+  // STORAGE POINT 2: this peer's contribution to the program, as decided.
   if (split) {
     const preamble = split.preamble;
     // s0-s3 are ONE page-global Hydra object (ensureCameraBypass patches

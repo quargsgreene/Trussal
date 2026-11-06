@@ -6,8 +6,11 @@ import { INIT_HYDRA_PATTERN, HYDRA_SHAPE_PATTERN } from '../../src/hydra-code.js
 import { INIT_TEXT_CYCLES_PATTERN, WORD_CALL_RE } from '../../src/text-cycles-core.js';
 import { INIT_CSS_PATTERN, CSS_CALL_RE } from '../../src/css-cycles-core.js';
 import { PERMISSIONS_CONFIG_STATEMENT_PATTERN } from '../../src/permissions-config.js';
+import { BOT_REPL_ABSENT_CALL_RE, BOT_REPL_ABSENT_INIT_RE } from '../src/script-gen/cluster-source.js';
 
 const DEFAULT_CAPABILITY_PATTERNS = {
+  absentCalls: { source: BOT_REPL_ABSENT_CALL_RE.source, flags: BOT_REPL_ABSENT_CALL_RE.flags },
+  absentInits: { source: BOT_REPL_ABSENT_INIT_RE.source, flags: BOT_REPL_ABSENT_INIT_RE.flags },
   word: { source: WORD_CALL_RE.source, flags: WORD_CALL_RE.flags },
   css: { source: CSS_CALL_RE.source, flags: CSS_CALL_RE.flags },
   initTextCycles: INIT_TEXT_CYCLES_PATTERN,
@@ -99,6 +102,45 @@ test('a Strudel-only edit still recombines with the bot\'s Hydra', async () => {
   assert.equal(ctl.evaluated.length, 1);
   assert.match(ctl.evaluated[0], /initHydra/);
   assert.match(ctl.evaluated[0], /s\("bd sd"\)/);
+});
+
+test('a pushed edit loses what this REPL cannot run, keeping the audio', async () => {
+  for (const call of ['reaction("tu")', 'poll("a?")', 'liveCapture("audio")', 'backing("a.wav")', 'multiStack(s("hh"))']) {
+    const ctl = installControl({ hydra: '' });
+    await ctl.push(`$: ${call}\n$: s("bd sd")`);
+    assert.equal(ctl.evaluated.length, 1, call);
+    assert.ok(!ctl.evaluated[0].includes(call), `${call} never reaches the REPL`);
+    assert.match(ctl.evaluated[0], /s\("bd sd"\)/, 'the audio pattern survives');
+  }
+});
+
+// A bot's editor is seeded with its announced program, so a routine edit pushes
+// a multi-line css() straight back. A `color: red;` inside its template literal
+// is not a voice label: split there, only the first fragment was dropped and
+// the rest reached the REPL as a syntax error.
+test('a multi-line css() in a pushed edit is dropped whole', async () => {
+  const ctl = installControl({ hydra: '' });
+  await ctl.push('$: css(`.ts-chip {\n  color: red;\n  border: 1px;\n}`)\n$: s("bd sd")');
+  assert.equal(ctl.evaluated.length, 1);
+  assert.match(ctl.evaluated[0], /s\("bd sd"\)/, 'the audio pattern survives');
+  assert.doesNotMatch(ctl.evaluated[0], /color: red|border: 1px|css\(/, 'nothing of the css() is left behind');
+});
+
+test('a blank line or a label-like line in a template literal does not split a pushed edit', async () => {
+  const ctl = installControl({ hydra: '' });
+  await ctl.push('$: css(`.a {\n  color: red;\n\n  top: 0;\n}`)\n\n$: s("bd sd")\n/* note:\n\nlead: */\n$: s("hh")');
+  assert.equal(ctl.evaluated.length, 1);
+  assert.doesNotMatch(ctl.evaluated[0], /color: red|top: 0|css\(/);
+  assert.match(ctl.evaluated[0], /s\("bd sd"\)/);
+  assert.match(ctl.evaluated[0], /s\("hh"\)/);
+});
+
+test('a quote or a comment holding a backtick does not hide the labels after it', async () => {
+  const ctl = installControl({ hydra: '' });
+  await ctl.push('$: s("bd`sd") // not a `template\n$: css(`.a { color: red; }`)\n$: s("hh")');
+  assert.equal(ctl.evaluated.length, 1);
+  assert.doesNotMatch(ctl.evaluated[0], /color: red|css\(/);
+  assert.match(ctl.evaluated[0], /s\("hh"\)/);
 });
 
 test('a pushed edit re-registers worklets/synths/samples before evaluating, same as boot', async () => {

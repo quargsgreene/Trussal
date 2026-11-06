@@ -11,6 +11,21 @@ import {
   hasFileCycles,
   MAX_FILE_BYTES,
 } from '../src/file-cycles-core.js';
+import { keepMatchingStatements } from '../src/silent-voice-core.js';
+
+// A file voice written across lines. The rewrite lands in a double-quoted string,
+// where a raw newline is a syntax error that fails the whole room program.
+test('a multi-line image() becomes one voice with its files on one line', () => {
+  const { code, atoms } = rewriteFileCalls('$: image(`a.png\nb.png`)');
+  assert.equal(code, '$: image("fc0 fc1")\n._fcRender()');
+  assert.equal(atoms.fc1.text, 'b.png');
+});
+
+test('keepMatchingStatements keeps an image() whole when it holds a blank line', () => {
+  const image = '$: image(`a.png\n\nb.png`)';
+  assert.equal(keepMatchingStatements(`$: s("bd")\n\n${image}`, FILE_CALL_RE), image);
+  assert.equal(rewriteFileCalls(image).code, '$: image("fc0  fc1")\n._fcRender()');
+});
 
 test('kindOfFilename classifies every supported extension', () => {
   assert.equal(kindOfFilename('cat.png'), 'image');

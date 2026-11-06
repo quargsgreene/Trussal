@@ -11,6 +11,20 @@ import {
   hasPollCycles,
   POLL_CALL_RE,
 } from '../src/polls-core.js';
+import { keepMatchingStatements } from '../src/silent-voice-core.js';
+
+// The path of a remote peer excluded in aggregator mode: its audio is dropped
+// but its poll must still reach the room. A blank line in the JSON is not a
+// paragraph break; split there, the kept half is a syntax error.
+test('keepMatchingStatements keeps a poll() whole when its JSON holds a blank line', () => {
+  const literal = '{\n  "question": "Which?",\n\n  "options": ["A", "B"]\n}';
+  const poll = `$: poll(\`${literal}\`)`;
+  assert.equal(keepMatchingStatements(`$: s("bd")\n\n${poll}`, POLL_CALL_RE), poll);
+
+  const { code, atoms } = rewritePollCalls(poll);
+  assert.equal(code, '$: poll("pl0")\n._pollRender()');
+  assert.equal(parsePollLiteral(atoms.pl0.text).question, 'Which?');
+});
 
 test('parsePollLiteral rejects malformed JSON with a clear error', () => {
   assert.throws(() => parsePollLiteral('{question: "no quotes on the key"}'), /not valid JSON/);

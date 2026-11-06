@@ -23,6 +23,10 @@
 !src/backing-core.js
 !src/output-route-core.js
 !src/multimedia-core.js
+!src/reactions-core.js
+!src/panel-bg-core.js
+!src/meeting-move-core.js
+!src/skip-prejoin.js
 !latency-instrument
 !public/lib
 bots/node_modules

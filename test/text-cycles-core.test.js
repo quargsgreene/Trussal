@@ -23,6 +23,46 @@ test('rewrite mints the whole chain and reports the atom table', () => {
   assert.equal(atoms.tc7.text, '12px');
 });
 
+// A word() written across lines. The rewrite lands in a double-quoted string,
+// where a raw newline is a syntax error that fails the whole room program.
+test('a multi-line word() becomes one voice with its atoms on one line', () => {
+  const { code, atoms } = rewriteTextCalls('$: word(`hello\nthere`)');
+  assert.equal(code, '$: word("tc0 tc1")\n._tcRender()');
+  assert.equal(atoms.tc0.text, 'hello');
+  assert.equal(atoms.tc1.text, 'there');
+});
+
+test('encodeMiniText turns line endings into spaces', () => {
+  const tokens = [];
+  const mint = (text) => { tokens.push(text); return `t${tokens.length - 1}`; };
+  assert.equal(encodeMiniText('a\nb\r\nc\td', mint), 't0 t1  t2\tt3');
+  assert.deepEqual(tokens, ['a', 'b', 'c', 'd']);
+  // Euclid arguments are copied through by their own branch.
+  assert.equal(encodeMiniText('e(3,\n8)', mint), 't4(3, 8)');
+});
+
+test('a blank line inside word() is not a paragraph break', () => {
+  const { code } = rewriteTextCalls('$: word(`hello\n\nthere`)\n\n$: s("bd")');
+  assert.equal(code, '$: word("tc0  tc1")\n._tcRender()\n\n$: s("bd")');
+});
+
+test('an interpolated word() with a blank line gets its renderer outside the template', () => {
+  const src = '$: word(`<${a}\n\nb>`)';
+  assert.equal(rewriteTextCalls(src).code, `${src}\n._tcRender()`);
+});
+
+test('a css() with a blank line beside a word() voice stays whole and gets no renderer', () => {
+  const css = '$: css(`.a {\n\n  color: red;\n}`)';
+  const { code } = rewriteTextCalls(`${css}\n\n$: word("hi")`);
+  assert.equal(code, `${css}\n\n$: word("tc0")\n._tcRender()`);
+});
+
+test('a stray apostrophe or backtick cannot hide a real paragraph break', () => {
+  // Swept into the word() statement, s("bd") would be muted by its renderer.
+  const { code } = rewriteTextCalls('$: word("it`s don\'t") // a ` and a \'\n\ns("bd")');
+  assert.equal(code, '$: word("tc0 tc1") // a ` and a \'\n._tcRender()\n\ns("bd")');
+});
+
 test('single quotes stay one literal phrase, no mini and no escaping', () => {
   const { code, atoms } = rewriteTextCalls(`$: word('I like ~ squirrels?')`);
   assert.match(code, /word\("tc0"\)/);

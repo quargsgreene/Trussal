@@ -1,7 +1,4 @@
-/* Styles for Live Capture (src/live-capture.js). Imported as raw text (see
-   build.mjs's '.css': 'text' loader) and injected once under the id
-   `trussal-livecapture-style` by ensureStyles(), called from the two overlay
-   builders below.
+/* Styles for Live Capture (src/live-capture.js), bundled through src/styles.css.
 
    The overlays and their elements are LIVE-CAPTURE OUTPUT, not app chrome:
    a capture replays someone else's content into them, so the per-span values
@@ -17,7 +14,7 @@
   pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
   display: flex; flex-direction: column; gap: 2px;
 }
-#trussal-livecapture-text span {
+#trussal-livecapture-text > div {
   color: var(--lc-color, inherit);
   font-size: var(--lc-size, inherit);
   font-family: var(--lc-font, inherit);

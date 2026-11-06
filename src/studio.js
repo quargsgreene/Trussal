@@ -426,6 +426,8 @@ subscribeFleetStatus((status) => {
     // The cluster is gone; let the same botConfig({ spawn: n }) rebuild it on
     // the next eval instead of being deduped away as "already done".
     resetBotClusterDirectives();
+  } else if (status.action === 'bot-error') {
+    line = `bot ${status.clusterIndex} failed, replacing it — ${status.reason || 'eval error'}`;
   }
   if (line) setStatus(line);
 });
@@ -1568,6 +1570,11 @@ function ensureWindow(name) {
 }
 
 function seedLocalPatternOnce() {
+  // A bot's program arrives from the fleet and it announces it itself once its
+  // REPL has booted; the aggregator has none. Seeding either puts the default
+  // pattern on the room's roster as if it were their code, and leaves it there
+  // for good if a bot never gets as far as announcing.
+  if (window.__trussalIsBot || window.__trussalIsAggregator) return;
   const room = getRoomNameFromUrl();
   if (!room || seededRoom === room) return;
   const localPeer = getLocalPeer();

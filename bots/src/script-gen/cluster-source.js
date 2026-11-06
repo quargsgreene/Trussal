@@ -26,11 +26,17 @@
  */
 
 import { splitHydraCode, normalizePeerCode, stripCapabilityPreambles } from '../../../src/hydra-code.js';
-import { splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
+import { splitParagraphs, splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { LIVECAPTURE_CALL_RE } from '../../../src/live-capture-core.js';
 import { BACKING_CALL_RE } from '../../../src/backing-core.js';
 import { MULTI_CALL_RE } from '../../../src/multimedia-core.js';
+import { REACTION_CALL_RE } from '../../../src/reactions-core.js';
+import { PANEL_CALL_RE } from '../../../src/panel-bg-core.js';
+import { FILE_CALL_RE } from '../../../src/file-cycles-core.js';
+import { POLL_CALL_RE } from '../../../src/polls-core.js';
+import { BREAKOUT_CALL_RE } from '../../../src/breakout-core.js';
+import { MEETING_CALL_RE } from '../../../src/meeting-move-core.js';
 import { defaultBotConfig, parseBotConfig } from '../../../src/bot-config.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
 import { insertBeforeHydraOut } from '../shared/hydra-chain.js';
@@ -235,7 +241,7 @@ function dropCapabilityParagraphs(strudel, { initRe, callRe }) {
     if (initRe.test(chunk) || callRe.test(chunk)) return null;
     return chunk;
   };
-  const kept = src.split(/\n\n+/).map((paragraph) => {
+  const kept = splitParagraphs(src).map((paragraph) => {
     if (!paragraph.trim()) return null;
     const survivors = splitStatements(paragraph)
       .map((s) => dropChunk(s.text))
@@ -340,6 +346,40 @@ export function dropMultimediaStatements(strudel) {
   });
 }
 
+// The statements that act on the meeting rather than make sound: reactions, the
+// panel background, file attachments, polls, breakout rooms and meeting moves.
+// strudel.js installs all of them, and the vanilla @strudel/repl a bot boots has
+// none. `unreact`, `vote` and `close` are callable on their own but have no call
+// pattern of their own in their capability's core.
+const ROOM_ACTION_CALL_RE = new RegExp([
+  REACTION_CALL_RE, PANEL_CALL_RE, FILE_CALL_RE, POLL_CALL_RE, BREAKOUT_CALL_RE, MEETING_CALL_RE,
+  /(?:^|[^\w$])(?:unreact|vote|close)\s*\(/,
+].map((re) => re.source).join('|'));
+export const BOT_REPL_ABSENT_INIT_RE = /^\s*await\s+init(?:FileCycles|Polls)\s*\(/m;
+
+// Every call a performer's editor can hold that a bot's REPL cannot evaluate,
+// for the path that strips a pushed edit in-page (pageRemoteControl), which
+// receives it as JSON. word()/css() travel separately, paired with their inits.
+export const BOT_REPL_ABSENT_CALL_RE = new RegExp([
+  ROOM_ACTION_CALL_RE, LIVECAPTURE_CALL_RE, BACKING_CALL_RE, MULTI_CALL_RE,
+].map((re) => re.source).join('|'));
+
+/**
+ * Strip the statements that act on the meeting. Always applied to what the
+ * bot's OWN REPL evaluates, where any of them throws ReferenceError: evaluation
+ * fails, the scheduler never starts, and the bot is silent and replaced, over
+ * and over. Unlike a word() voice nothing downstream reads them from a bot's
+ * announce either (buildBotSilentBlock keeps only word() and css()), so they
+ * come off that too, where they would only show code that is not running. N bots
+ * repeating one performer's poll or breakout assignment is not what a copy means.
+ */
+export function dropRoomActionStatements(strudel) {
+  return dropCapabilityParagraphs(strudel, {
+    initRe: BOT_REPL_ABSENT_INIT_RE,
+    callRe: ROOM_ACTION_CALL_RE,
+  });
+}
+
 /**
  * The {strudel, hydra} one bot boots with, before variation.js positions it in
  * the mix.
@@ -429,7 +469,7 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // declaration, and any declared cluster has word()/css() stripped from the
   // announce — a cluster of N bots repeating one author's words in every
   // viewer's chat panel is rarely what a configured spawn wants.
-  let announceStrudel = undeclared ? strudel : dropCssStatements(dropTextStatements(strudel));
+  let announceStrudel = dropRoomActionStatements(undeclared ? strudel : dropCssStatements(dropTextStatements(strudel)));
 
   // A cluster built from a performer's own code plays only what is actually
   // in their editor — the same rule the audio side already follows. Only
@@ -469,7 +509,7 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // of them to strip here. Derived from the SAME shaped `strudel`
   // announceStrudel came from, so the two never diverge on what audio they
   // describe — only on whether a text/css/liveCapture voice rides along.
-  strudel = dropMultimediaStatements(dropBackingStatements(dropLiveCaptureStatements(dropCssStatements(dropTextStatements(strudel)))));
+  strudel = dropRoomActionStatements(dropMultimediaStatements(dropBackingStatements(dropLiveCaptureStatements(dropCssStatements(dropTextStatements(strudel))))));
   // A repertoire that was ENTIRELY capability-only content (live-confirmed:
   // a performer whose whole editor was `$: liveCapture(...)`, nothing else)
   // strips down to an empty string here — not just liveCapture-free but

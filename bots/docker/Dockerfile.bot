@@ -105,6 +105,13 @@ COPY src/output-route-core.js /repo/src/output-route-core.js
 # through multiArrange()/multiStack() is blitted rather than re-executed.
 # Imports only file-cycles-core.js, copied above. Same two entries.
 COPY src/multimedia-core.js /repo/src/multimedia-core.js
+# cluster-source.js reads their call shapes to keep what a bot's REPL cannot run
+# out of it (bot.js imports it too, for a pushed edit). meeting-move-core.js
+# imports skip-prejoin.js. Same two entries each.
+COPY src/reactions-core.js /repo/src/reactions-core.js
+COPY src/panel-bg-core.js /repo/src/panel-bg-core.js
+COPY src/meeting-move-core.js /repo/src/meeting-move-core.js
+COPY src/skip-prejoin.js /repo/src/skip-prejoin.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules

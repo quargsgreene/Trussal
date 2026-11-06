@@ -1574,7 +1574,19 @@ export class FleetService {
         : shouldReplace(m, fleet, this.cfg);
       if (verdict.replace) {
         console.warn(`[fleet] replacing bot ${m.botId}: ${verdict.reason}`);
-        const { ownerIndex, room } = existing;
+        const { ownerIndex, room, clusterIndex } = existing;
+        // An eval error is the one reason its owner can act on, and the fleet's
+        // log is not somewhere they are looking while playing. The first line
+        // only: the rest of a reported error is its stack.
+        if (m.errors && m.errors.length) {
+          this.#busSend(room, {
+            type: 'fleet-status',
+            action: 'bot-error',
+            ownerIndex,
+            clusterIndex,
+            reason: String(m.errors[0]).split('\n')[0],
+          });
+        }
         await this.#stopBot(m.botId);
         if (this.bots.size < this.activeCeiling && this.#clusterSize(room) < this.#roomCeiling(room)) {
           await this.#startBot(m.botId, room, ownerIndex);

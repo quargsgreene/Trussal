@@ -36,7 +36,7 @@
 // visibility stay Trussal-surface-only. Both copies are subject to every
 // guardrail.
 
-import { splitStatements } from './text-cycles-core.js';
+import { splitParagraphs, splitStatements } from './text-cycles-core.js';
 
 // --- Property tables ---------------------------------------------------------
 
@@ -817,8 +817,7 @@ const BARE_INIT_RE = /^\s*await\s+init(?:TextCycles|Css)\s*\(\s*\)\s*;?\s*$/;
 // and would otherwise be kept — and forwarded as a SECOND voice for that
 // peer's audio, playing it twice.
 export function keepSilentStatements(code) {
-  const src = String(code ?? '');
-  const kept = src.split(/\n\n+/).map((paragraph) => {
+  const kept = splitParagraphs(code).map((paragraph) => {
     if (!paragraph.trim()) return null;
     const survivors = splitCssStatements(paragraph)
       .filter((s) => s.hasWord || s.hasCss || BARE_INIT_RE.test(s.text.trim()))
@@ -927,21 +926,53 @@ export function cssVarName(selector, prop) {
   return `--cc-${safeIdent(selector)}-${prop}`;
 }
 
-// Find the backticked argument of a css( call starting at `open` (the index of
-// its "("). Returns null if the argument is not a template literal.
-function readTemplateArg(text, open) {
-  let i = open + 1;
-  while (i < text.length && /\s/.test(text[i])) i++;
-  if (text[i] !== '`') return null;
-  const start = i;
-  i++;
+// The next css( call at or after `from` that is really code, not text inside a
+// string or a comment. `start` is its `css`, `open` its "(".
+function nextCssCall(text, from) {
+  let i = from;
   while (i < text.length) {
-    if (text[i] === '\\') { i += 2; continue; }
-    if (text[i] === '`') return { start, end: i + 1, body: text.slice(start + 1, i) };
-    i++;
+    const c = text[i];
+    if (c === '"' || c === "'" || c === '`') {
+      for (i++; i < text.length && text[i] !== c; i++) if (text[i] === '\\') i++;
+      i++;
+    } else if (c === '/' && text[i + 1] === '/') {
+      const nl = text.indexOf('\n', i);
+      i = nl === -1 ? text.length : nl + 1;
+    } else if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      i = end === -1 ? text.length : end + 2;
+    } else {
+      const m = c === 'c' && !/[\w$]/.test(text[i - 1] ?? '') ? /^css\s*\(/.exec(text.slice(i)) : null;
+      if (m) return { start: i, open: i + m[0].length - 1 };
+      i++;
+    }
   }
   return null;
 }
+
+// The argument of a css( call whose "(" is at `open`: SCSS in backticks or plain
+// quotes. Text with no brace in it is a bare selector, for a statement that only
+// patterns chained properties: `css(".x")` means css(`.x {}`), and it is all a
+// mondo line has room for. Returns the SCSS and the index just past the ")", or
+// null unless the argument is exactly one non-empty string literal.
+function readCssArg(text, open) {
+  let i = open + 1;
+  while (i < text.length && /\s/.test(text[i])) i++;
+  const quote = text[i];
+  if (quote !== '`' && quote !== '"' && quote !== "'") return null;
+  const start = i + 1;
+  for (i = start; i < text.length && text[i] !== quote; i++) if (text[i] === '\\') i++;
+  if (i >= text.length) return null;
+  const raw = text.slice(start, i);
+  for (i++; i < text.length && /\s/.test(text[i]); i++);
+  if (text[i] !== ')' || !raw.trim()) return null;
+  // SCSS has backslashes of its own (`\:`), so only the delimiter is unescaped.
+  const body = quote === '`' ? raw : raw.split(`\\${quote}`).join(quote);
+  return { scss: /[{}]/.test(body) ? body : `${body.trim()} {}`, end: i + 1 };
+}
+
+// Whitespace and comments, which may sit between the links of a chain.
+const SKIP_TO_LINK_RE = /(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/y;
 
 // Read a chain of `.name(arg)` calls following `from`, stopping at the end of
 // the statement. Returns the calls and where the chain ended.
@@ -949,8 +980,9 @@ function readChain(text, from) {
   const calls = [];
   let i = from;
   for (;;) {
-    let j = i;
-    while (j < text.length && /[\s\n]/.test(text[j])) j++;
+    SKIP_TO_LINK_RE.lastIndex = i;
+    SKIP_TO_LINK_RE.exec(text);
+    const j = SKIP_TO_LINK_RE.lastIndex;
     if (text[j] !== '.') break;
     const m = /^\.\s*([A-Za-z_$][\w$]*)\s*\(/.exec(text.slice(j));
     if (!m) break;
@@ -989,47 +1021,67 @@ export function rewriteCssCalls(code, { peer = null, counter = { n: 0 } } = {}) 
     return token;
   };
 
+  // Rewrite every css() call in `text`, or return null if one cannot be read.
+  const rewriteCalls = (text) => {
+    let out = '';
+    let cursor = 0;
+    for (let call = nextCssCall(text, 0); call; call = nextCssCall(text, cursor)) {
+      const arg = readCssArg(text, call.open);
+      if (!arg) return null;
+
+      const scssToken = mint(arg.scss, 'scss');
+      const { calls, end: chainEnd } = readChain(text, arg.end);
+
+      // Split the chain: CSS properties become patterned declarations, anything
+      // else is Strudel structure and stays where the performer put it, apart
+      // from any css() call inside its argument.
+      const props = [];
+      let piece = `css("${scssToken}")`;
+      for (const c of calls) {
+        const prop = cssPropForMethod(c.name);
+        const argText = text.slice(c.argStart, c.argEnd);
+        if (!prop) {
+          const inner = rewriteCalls(argText);
+          if (inner === null) return null;
+          piece += text.slice(c.start, c.argStart) + inner + text.slice(c.argEnd, c.end);
+          continue;
+        }
+        // A double-quoted argument is a patterned value; anything else (a
+        // slider, a variable, a call) is passed through and guarded at runtime.
+        const literal = /^\s*"(?:[^"\\]|\\.)*"\s*$/.test(argText);
+        if (literal) {
+          const body = argText.trim().slice(1, -1);
+          const encoded = encodeCssValue(body, (v) => mint(v));
+          piece += `._cc_${c.name}("${encoded}")`;
+          props.push({ prop, method: c.name, values: collectValues(body), literal: true });
+        } else {
+          piece += `._cc_${c.name}(${argText})`;
+          props.push({ prop, method: c.name, values: [], literal: false });
+        }
+      }
+
+      sheets.push({ token: scssToken, scss: arg.scss, props, peer });
+      out += text.slice(cursor, call.start) + piece;
+      cursor = chainEnd;
+    }
+    return out + text.slice(cursor);
+  };
+
   const rewriteStatement = ({ text, hasCss }) => {
     if (!hasCss) return text;
 
-    const call = CSS_CALL_RE.exec(text);
-    const open = text.indexOf('(', call.index);
-    const arg = readTemplateArg(text, open);
-    if (!arg) {
-      errors.push('css() takes SCSS in backticks, e.g. css(`.example { color: red }`)');
-      return text;
+    const sheetsBefore = sheets.length;
+    const out = rewriteCalls(text);
+    if (out === null) {
+      // Refused whole, like any other statement. Left in place, its `.camelCase`
+      // calls would reach Strudel raw, where they are not methods at all, and
+      // that throw would stop every voice in the room.
+      sheets.length = sheetsBefore;
+      errors.push('css() takes a selector or SCSS as one string, e.g. css(".example") or css(`.example { color: red }`); this statement was dropped');
+      return '';
     }
-
-    const scssToken = mint(arg.body, 'scss');
-    const { calls, end: chainEnd } = readChain(text, arg.end + 1);
-
-    // Split the chain: CSS properties become patterned declarations, anything
-    // else is Strudel structure and is left exactly where the performer put it.
-    const props = [];
-    let out = `${text.slice(0, call.index + call[0].length - 1)}("${scssToken}")`;
-    for (const c of calls) {
-      const prop = cssPropForMethod(c.name);
-      const argText = text.slice(c.argStart, c.argEnd);
-      if (!prop) {
-        out += text.slice(c.start, c.end);
-        continue;
-      }
-      // A double-quoted argument is a patterned value; anything else (a
-      // slider, a variable, a call) is passed through and guarded at runtime.
-      const literal = /^\s*"(?:[^"\\]|\\.)*"\s*$/.test(argText);
-      if (literal) {
-        const body = argText.trim().slice(1, -1);
-        const encoded = encodeCssValue(body, (v) => mint(v));
-        out += `._cc_${c.name}("${encoded}")`;
-        props.push({ prop, method: c.name, values: collectValues(body), literal: true });
-      } else {
-        out += `._cc_${c.name}(${argText})`;
-        props.push({ prop, method: c.name, values: [], literal: false });
-      }
-    }
-    out += text.slice(chainEnd);
-
-    sheets.push({ token: scssToken, scss: arg.body, props, peer });
+    // Every `css(` was inside a string or a comment.
+    if (sheets.length === sheetsBefore) return text;
     // The renderer carries the dominant trigger that keeps a css voice silent,
     // and is attached per statement so an audio voice sharing the program is
     // never muted by it.
@@ -1047,8 +1099,9 @@ export function rewriteCssCalls(code, { peer = null, counter = { n: 0 } } = {}) 
   // WHOLE program's evaluate() down — Hydra frozen, no audio, no text, no CSS,
   // for everyone. Splitting into paragraphs first keeps that declaration in
   // its own statement, exactly as it reads on the page.
-  const rewritten = String(code ?? '').split(/\n\n+/)
-    .map((paragraph) => splitCssStatements(paragraph).map(rewriteStatement).join('\n'))
+  const rewritten = splitParagraphs(code)
+    .map((paragraph) => splitCssStatements(paragraph).map(rewriteStatement).filter(Boolean).join('\n'))
+    .filter(Boolean)
     .join('\n\n');
 
   return { code: rewritten, atoms, sheets, errors };

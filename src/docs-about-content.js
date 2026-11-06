@@ -673,7 +673,7 @@ const CONFIG_FUNCTIONS = [
     body: `
       <p>Applies constraints for generated bot code upon spawn.</p>
       <span>Example:</span>
-      <code>botConfig({"random":true, "quantity":3, "retroactive":true})
+      <code>botConfig({"spawn":3, "random":"params", "retroactive":true})
       </code>
       `,
   },

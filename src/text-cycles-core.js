@@ -75,19 +75,68 @@ export function hasTextCycles(code) {
 // Split a program into statements, each flagged with whether it contains a
 // word() call. A text param outside such a statement is inert (nothing renders
 // without a word), so leaving those alone keeps audio voices untouched.
+//
+// A label only counts at top level: `color: red` on a line of multi-line SCSS
+// inside css(`…`) reads exactly like one, and splitting there tears the statement
+// in half.
 export function splitStatements(code) {
-  const lines = String(code ?? '').split('\n');
   const out = [];
   let cur = [];
-  for (const line of lines) {
-    if (LABEL_RE.test(line) && cur.length) {
+  for (const { text, topLevel } of flagLines(code)) {
+    if (topLevel && LABEL_RE.test(text) && cur.length) {
       out.push(cur.join('\n'));
       cur = [];
     }
-    cur.push(line);
+    cur.push(text);
   }
   if (cur.length) out.push(cur.join('\n'));
   return out.map((text) => ({ text, hasWord: WORD_CALL_RE.test(text) }));
+}
+
+// Blank-line-separated paragraphs. A blank line inside a template literal or
+// block comment does not end one.
+export function splitParagraphs(code) {
+  const out = [];
+  let cur = [];
+  for (const { text, topLevel } of flagLines(code)) {
+    if (topLevel && text === '') {
+      if (cur.length) out.push(cur.join('\n'));
+      cur = [];
+    } else {
+      cur.push(text);
+    }
+  }
+  if (cur.length) out.push(cur.join('\n'));
+  return out;
+}
+
+// The lines of `code`, each flagged with whether it opens at top level rather
+// than inside a template literal or block comment, the only constructs here that
+// span lines.
+function flagLines(code) {
+  let mode = null; // null | '`' | '*'
+  return String(code ?? '').split('\n').map((text) => {
+    const topLevel = mode === null;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (mode === '`') {
+        if (c === '\\') i++;
+        else if (c === '`') mode = null;
+      } else if (mode === '*') {
+        if (c === '*' && text[i + 1] === '/') { mode = null; i++; }
+      } else if (c === '/' && text[i + 1] === '/') {
+        break;
+      } else if (c === '/' && text[i + 1] === '*') {
+        mode = '*';
+        i++;
+      } else if (c === '`') {
+        mode = '`';
+      } else if (c === '"' || c === "'") {
+        for (i++; i < text.length && text[i] !== c; i++) if (text[i] === '\\') i++;
+      }
+    }
+    return { text, topLevel };
+  });
 }
 
 // Walk one mini string, minting literal atoms and passing operators through.
@@ -137,7 +186,10 @@ export function encodeMiniText(src, mint) {
     atom += c;
   }
   flush();
-  return out;
+  // To mini a line ending only separates atoms, but this output lands in a
+  // double-quoted string, where a raw one is a syntax error. Atoms were minted
+  // out, so nothing here is the performer's text.
+  return out.replace(/[\r\n]/g, ' ');
 }
 
 // Raw JS string literal → the characters between its quotes, with the quoting
@@ -197,7 +249,7 @@ export function rewriteTextCalls(code, { peer = null, counter = { n: 0 } } = {})
   // silently mutes it, since the dominant trigger it never asked for now sits
   // on its hap too. Splitting into paragraphs first keeps each on its own line,
   // exactly as it reads on the page.
-  const rewritten = String(code ?? '').split(/\n\n+/)
+  const rewritten = splitParagraphs(code)
     .map((paragraph) => splitStatements(paragraph).map(rewriteStatement).join('\n'))
     .join('\n\n');
 

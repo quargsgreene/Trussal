@@ -218,6 +218,30 @@ function wrapParagraph(text, fx) {
   return `$: ${group(trimmed)}${fx}`;
 }
 
+// A line that is nothing but an `await initX()` capability declaration.
+const CAPABILITY_LINE_RE = /^\s*await\s+init[A-Za-z]+\s*\([^)]*\)\s*;?\s*(?:\/\/.*)?$/;
+
+// Split a block that declares a silent capability into the declarations opening
+// it and the Strudel statements to rewrite and play, or null when
+// `declaresCapability` says the block declares none. Only the declaration lines
+// are preamble: a voice written straight under `await initCss()`, with no blank
+// line, is still a voice. `declaresCapability` is asked of the whole block,
+// because that is how the caller decides the block is text or css at all; if the
+// two disagreed the block would be treated as css and never rewritten.
+export function splitSilentPreamble(code, declaresCapability) {
+  const text = String(code ?? '');
+  if (!text || !declaresCapability(text)) return null;
+  const blank = text.match(/\n\n+/);
+  const lines = (blank ? text.slice(0, blank.index) : text).split('\n');
+  const isDeclaration = (line) => CAPABILITY_LINE_RE.test(line);
+  const rest = lines.filter((line) => !isDeclaration(line)).join('\n').trim();
+  const tail = blank ? text.slice(blank.index).trim() : '';
+  return {
+    preamble: lines.filter(isDeclaration).join('\n'),
+    strudel: [rest, tail].filter(Boolean).join('\n\n'),
+  };
+}
+
 // Attach `fx` (a chain suffix such as `.distort(.2).crush(5)` or
 // `.hpf(80).delay(.4).gain(.5)`) to Strudel source `rawCode`, returning code
 // that is safe to splice into a larger program (strudel.js) or to hand to a

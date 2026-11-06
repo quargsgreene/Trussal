@@ -146,6 +146,15 @@ test('pageStrudelBoot loads the REPL, takes code as a structured arg, reports ev
   assert.match(js, /__trussalSamples/, 'shared sample banks reach the page');
 });
 
+test('pageStrudelBoot announces the code before reporting that it failed, and says why', () => {
+  const js = String(pageStrudelBoot);
+  const announced = js.indexOf('__trussalAnnounceLocalPattern(announced)');
+  const failed = js.indexOf('pattern did not start after evaluation');
+  assert.ok(announced >= 0 && failed > announced,
+    'a bot whose evaluation failed must still show the room the code it was given');
+  assert.match(js, /repl\.state\.evalError/, 'the failure carries Strudel\'s own reason');
+});
+
 test('pageStrudelBoot substitutes a valid pattern when strudel is empty, so pure Text/CSS Cycles bots still announce', () => {
   const js = String(pageStrudelBoot);
   // A bot whose captured code is pure Text/CSS Cycles has both stripped from

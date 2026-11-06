@@ -68,6 +68,13 @@ COPY src/output-route-core.js /repo/src/output-route-core.js
 # hydra-code.js also imports it: MULTI_CALL_RE (multiArrange()/multiStack()).
 # Same two entries as Dockerfile.bot.
 COPY src/multimedia-core.js /repo/src/multimedia-core.js
+# cluster-source.js reads their call shapes to keep what a bot's REPL cannot run
+# out of it. meeting-move-core.js imports skip-prejoin.js. Same two entries as
+# Dockerfile.bot.
+COPY src/reactions-core.js /repo/src/reactions-core.js
+COPY src/panel-bg-core.js /repo/src/panel-bg-core.js
+COPY src/meeting-move-core.js /repo/src/meeting-move-core.js
+COPY src/skip-prejoin.js /repo/src/skip-prejoin.js
 RUN ln -s bots/node_modules /repo/node_modules
 
 # Import guard: fail the BUILD if anything the conductor runs cannot load inside

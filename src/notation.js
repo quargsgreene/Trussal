@@ -159,24 +159,62 @@ const BRACKET_STRING_RE = /^(['"])([<[][\s\S]*)\1$/;
 // A bracket token becomes a quoted mini string; a quoted or bare token is
 // carried through unchanged. Every other line (Hydra preamble, blank,
 // comment, a plain Strudel statement) is emitted verbatim.
+//
+// A call whose backtick is still open at the end of its line (multi-line SCSS
+// in `$ css`) runs on through the line that closes it; the newlines stay in the
+// token, so the line count still holds.
 export function mondoToMini(body) {
-  return String(body ?? '').split('\n').map((line) => {
+  const lines = String(body ?? '').split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    const opensCall = (MONDO_OPEN_RE.test(line) && !MINI_OPEN_RE.test(line)) || MONDO_CHAIN_RE.test(line);
+    if (opensCall) {
+      while (hasOpenBacktick(line) && i + 1 < lines.length) line += `\n${lines[++i]}`;
+    }
     let m = line.match(/^(\s*)\$[ \t]+(\S[\s\S]*?)\s*$/);
-    if (m && !/^\s*\$:/.test(line)) return `${m[1]}$: ${lowerMondoCall(m[2])}`;
+    if (m && !/^\s*\$:/.test(line)) {
+      out.push(`${m[1]}$: ${lowerMondoCall(m[2])}`);
+      continue;
+    }
     m = line.match(/^(\s*)#[ \t]+(\S[\s\S]*?)\s*$/);
-    if (m) return `${m[1]}.${lowerMondoCall(m[2])}`;
-    return line;
-  }).join('\n');
+    out.push(m ? `${m[1]}.${lowerMondoCall(m[2])}` : line);
+  }
+  return out.join('\n');
 }
+
+function hasOpenBacktick(s) {
+  let quote = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') i++;
+    else if (quote) { if (c === quote) quote = null; }
+    else if (c === '"' || c === "'" || c === '`') quote = c;
+  }
+  return quote === '`';
+}
+
+// A bare token no JS expression can be, so carrying it through could only be a
+// SyntaxError that stops the whole room's program: a number with a unit (`14px`,
+// `-1.5em`, `50%`) or a hex colour. `0x…`/`0b…`/`0o…` are real numbers.
+const BARE_VALUE_RE = /^(?:-?(?!0[xXbBoO])(?:\d+\.?\d*|\.\d+)(?:[a-zA-Z]+|%)|#[0-9a-fA-F]{3,8})$/;
+const BARE_WORD_RE = /^[A-Za-z_][\w-]*$/;
 
 function lowerMondoCall(rest) {
   const toks = tokenizeSpaced(rest);
   const name = toks.shift() || '';
-  const args = toks.map((t) => {
+  const args = toks.map((t, i) => {
     // A bracket group (with any glued modifiers) is a mini-notation pattern —
     // quote it so Strudel mini-parses it. Anything else — a quoted string, a
-    // number, a bare identifier, a `(expr)` — is carried through as written.
+    // number, a bare identifier, a `(expr)` — is carried through as written,
+    // apart from the two cases that can only mean text.
     if (t[0] === '<' || t[0] === '[') return quoteMiniPattern(t);
+    if (BARE_VALUE_RE.test(t)) return JSON.stringify(t);
+    // liveCapture's medium and source are names, never expressions:
+    // `$ liveCapture audio Ada true`.
+    if (name === 'liveCapture' && i < 2 && BARE_WORD_RE.test(t) && t !== 'true' && t !== 'false') {
+      return JSON.stringify(t);
+    }
     return t;
   });
   return `${name}(${args.join(', ')})`;

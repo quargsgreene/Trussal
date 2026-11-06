@@ -528,6 +528,11 @@ export function stopCssCycles() {
   }
   sheetsByToken = new Map();
   refused = new Set();
+  // The compiled sheet lives on this peer's record, here and on the sidecar.
+  // Clear it too: otherwise the next Play reinstalls it even if the program no
+  // longer has a css() voice, and its rules, whose custom properties were just
+  // released, reset the styled elements to CSS's initial values.
+  if (lastSentScss) sendLocalScss('');
   lastSentScss = '';
   lastSentScssByBot = new Map();
   bgCache.clear();

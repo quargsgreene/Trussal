@@ -40,6 +40,7 @@
 // who presses Play — self-heals on a later re-evaluate.
 
 import { listAudioInputDevices } from './latency-instrument.js';
+import { getParticipantIdForAudioTag } from './participants.js';
 import { getAllPeers, subscribePeerState } from './peer-state.js';
 import { peerAllowsClipping } from './permissions.js';
 import {
@@ -149,12 +150,14 @@ export function resolvePeerByName(name) {
 
 // The MediaStream a routed remote participant's audio is playing through —
 // latency-instrument mutes the tag and pipes it into that peer's chain, but the
-// srcObject is still the live stream. id convention: remoteAudio_<jitsiId>.
+// srcObject is still the live stream. Found by track identity, the same way
+// latency-instrument finds it: this deployment's tags have generic ids
+// (remoteAudio_remote-audio-N) that never contain the participant's id.
 export function remoteAudioStream(jitsiId) {
   if (!jitsiId || typeof document === 'undefined') return null;
-  const el = document.getElementById(`remoteAudio_${jitsiId}`)
-    || Array.from(document.querySelectorAll('audio')).find(a => a.id && a.id.includes(jitsiId));
-  return el && el.srcObject ? el.srcObject : null;
+  const el = Array.from(document.querySelectorAll('audio'))
+    .find((a) => a.srcObject && getParticipantIdForAudioTag(a) === jitsiId);
+  return el ? el.srcObject : null;
 }
 
 // The <video> element a remote participant's published track renders into.
